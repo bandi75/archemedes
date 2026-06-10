@@ -1,155 +1,103 @@
-<!-- source_url: https://learn.microsoft.com/en-us/azure/well-architected/cost-optimization/overview -->
-<!-- publication_date: 2025-11-01 -->
+<!-- source_url: https://learn.microsoft.com/en-us/azure/well-architected/cost-optimization/principles -->
+<!-- publication_date: 2025-05-27 -->
 <!-- category: waf -->
 
-# Azure Well-Architected Framework — Cost Optimization Pillar
+# Cost Optimization Design Principles — Azure Well-Architected Framework
 
-The Cost Optimization pillar of the Azure Well-Architected Framework focuses on **maximizing the business value of your workload while minimizing waste**. Cost optimization is not about spending as little as possible — it is about spending the right amount to achieve your business goals.
+Architecture design is always driven by business goals and must **factor in return on investment (ROI) and financial constraints**. A cost-optimized workload isn't necessarily a low-cost workload. Tactical approaches are reactive and can reduce costs only in the short term. To achieve long-term financial responsibility, you need to **create a strategy with prioritization, continuous monitoring, and repeatable processes** that focuses on optimization.
 
-## Design Principles
+---
 
-### 1. Develop Your Cost Management Discipline
-- Assign an owner for cloud cost governance
-- Define a cost budget per workload/environment
-- Review cost reports weekly during development; monthly in production
+## Develop Cost-Management Discipline
 
-### 2. Design with a Cost-Efficiency Mindset
-- Start with the cheapest tier that meets requirements; scale up when proven necessary
-- Prefer managed services over self-managed (they abstract operational overhead at a premium worth paying)
-- Use the Azure Pricing Calculator before committing to an architecture
+> **Goal**: Build a team culture that has awareness of budget, expenses, reporting, and cost tracking.
 
-### 3. Optimize Over Time
-- Track actual vs. expected spend continuously
-- Use Azure Cost Management + Billing for visibility and alerts
-- Right-size after observing actual usage (not hypothetical peaks)
+Cost optimization is conducted at various levels of the organization. It's important to understand how your workload cost is aligned with organizational FinOps practices.
 
-### 4. Align Costs to Business Value
-- Correlate cost to business metric (cost per transaction, cost per API call)
-- Identify and eliminate idle resources
-- Use tagging strategy to attribute costs to teams, features, or customers
-
-## Cost Drivers in Fraud Detection Architectures
-
-### Azure Event Hubs
-
-| Tier | Pricing Model | Key Cost Drivers |
-|---|---|---|
-| Standard | Per TU-hour + per million events | TU-hours × hours/month; event count |
-| Premium | Per PU-hour | PU-hours × hours/month (higher unit price, dedicated resources) |
-| Dedicated | Reserved capacity (cluster-hour) | Fixed monthly cost regardless of usage |
-
-**Cost optimization tips**:
-- Enable auto-inflate for Standard tier to avoid over-provisioning TUs
-- Use Event Hubs Capture to Archive to Blob (cheap) rather than keeping long retention in Event Hubs
-- Dedicate a separate namespace for dev/test at lower tier
-
-### Azure Stream Analytics
-
-| Item | Pricing |
+| Approach | Benefit |
 |---|---|
-| Streaming Units (SU) | ~$0.11/SU/hour (East US) |
+| Develop a cost model. This fundamental exercise is a prerequisite to setting up a financial tracking system. | A cost model helps segment expenses and estimate and forecast the total cost of ownership, including infrastructure, support, and implementation. It enables you to identify cost drivers early and predict how any change, growth, or shrinkage will affect overall spending. |
+| Have an effective but flexible **accountability model** that's governed and implemented with properly assigned roles and responsibilities. | Clear accountability helps enforce the functional expectations of each role, drive clarity, and generate reports with transparency at desired levels. Proactive governance can help you avoid actions that might lead to unnecessary expenditure. |
+| Estimate **realistic budgets** that cover all non-negotiable functional and nonfunctional requirements, personnel, and processes that provide for anticipated growth. | You'll be able to set financial boundaries and establish ways to check your spending against the allocated budget. You'll also get notifications when certain thresholds are exceeded, which prevents overspending. |
+| For workloads governed by SLAs, evaluate whether to allocate budget toward **potential penalties or toward implementation efforts**. | A well-implemented solution can help you avoid penalties altogether, making proactive investment a pragmatic approach to reduce the risk of future liability. |
+| Plan on **training costs, hiring expenses**, and the cost of infrastructure needed to augment skills as the workload matures. | Investing in staffing complements existing skills through full-time or vendor support. |
+| **Communicate cost implications of design changes** that are driven by insights gained from production. | The organization is able to make practical budget adjustment based on production feedback. |
 
-**Cost optimization tips**:
-- Tune query parallelism: a fully parallelized job needs fewer SUs
-- Turn off non-production jobs overnight (SU billing stops when job is stopped)
-- Use the auto-scale feature to scale SUs based on load
-- Start with the minimum SUs and scale up; monitor SU% metric
+---
 
-### Azure Cosmos DB
+## Design with a Cost-Efficiency Mindset
 
-| Mode | Pricing Model | Best for |
-|---|---|---|
-| Provisioned Throughput | Per 100 RU/s per hour | Steady, predictable workloads |
-| Autoscale | Per max 100 RU/s per hour (billed on peak reached) | Variable workloads with occasional spikes |
-| Serverless | Per RU consumed | Low-throughput or dev/test |
+> **Goal**: Spend only on what you need to achieve the highest return on your investments.
 
-**Cost optimization tips**:
-- Use autoscale for production fraud detection (handles TPS spikes without over-provisioning)
-- Monitor `NormalizedRUConsumption` — sustained < 50% means over-provisioned; reduce max RU/s
-- Use Cosmos DB Synapse Link for analytics instead of separate ETL copies
-- Delete TTL-expired documents to reduce storage costs
+Every architectural decision has direct and indirect financial implications. Understand the costs associated with build versus buy options, technology choices, the billing model and licensing, training, operations, and so on.
 
-### Azure Kubernetes Service (AKS)
-
-| Item | Pricing |
+| Approach | Benefit |
 |---|---|
-| Node VMs | Standard VM rates per node |
-| System node pool | Min 1 node × VM cost always running |
-| Control plane | Free (standard tier) or $0.10/hour (uptime SLA tier) |
+| Establish a **cost baseline, including the projected growth**. Ensure design choices work within the allocated budget to meet the functional and nonfunctional requirements. Factor in expenses related to technology choices, automation, acquisition, training, and change management. | Cost estimates enable you to forecast expenses against the budget and pinpoint key cost drivers. They also help reveal hidden costs that might otherwise go unnoticed, supporting a balanced approach that avoids overengineering. |
+| **Design and enforce cost guardrails** in your architecture that keep the resources within the upper and lower limits. | Enforcement can prevent incidental or unapproved charges and ensure that only budgeted quantity of resources are provisioned. |
+| Treat different **SDLC environments differently**, and deploy the right number of environments. | You can save money by understanding that not all environments need to simulate production. Nonproduction environments can have different features, SKUs, instance counts, and even logging. You can also save costs by creating preproduction environments on-demand and removing them when you no longer need them. |
 
-**Cost optimization tips**:
-- Use Cluster Autoscaler to scale node counts based on pod demand
-- Use spot node pools for stateless, fault-tolerant workloads (up to 90% discount)
-- Right-size nodes: use `kubectl top nodes` to find oversized VMs
-- Use Azure Reserved VM Instances (1-year or 3-year) for baseline node capacity (up to 72% savings)
-- Separate system pool (small, reliable) from user pool (scalable, spot-eligible)
+---
 
-### Azure Functions
+## Design for Usage Optimization
 
-| Plan | Pricing Model |
+> **Goal**: Maximize the use of resources and operations. Apply them to the negotiated functional and nonfunctional requirements of the solution.
+
+Services and offerings provide various capabilities and pricing tiers. After you purchase a set of features, avoid underutilizing them.
+
+| Approach | Benefit |
 |---|---|
-| Flex Consumption | Per execution + per GB-s memory used + always-ready instances |
-| Premium | Per vCPU-s + per GB-s (pre-warmed instances) |
-| Dedicated | Included in App Service Plan |
+| Take advantage of the **full capabilities of your selected resource SKUs** to meet performance, security, reliability, and operational goals. | You can maximize the use of what you paid for. Avoid selecting SKUs with features you don't need, as they can lead to unnecessary costs without added benefit. |
+| Evaluate opportunities to **dynamically adjust capacity**, scaling up when demand increases and scaling down when it's no longer needed. | Without this approach, you may need to pre-provision more capacity than necessary. Dynamic scaling enables you to maintain a minimum baseline and expand only when required, aligning resource consumption with actual usage patterns. |
+| Prioritize deployment of **active-active models over active-passive models**, as part of your recovery plan, if you already paid for the resources. | If your design defaults to active-passive models, you might have idle resources that could otherwise be used. Converting to active-active might enable you to meet load leveling and scale bursting requirements without overspending. |
+| Prioritize the use of **commitment-based discounted resources** when developing new features, setting up additional environments, or optimizing for nonfunctional requirements. | Finding opportunities to use committed plans can significantly reduce the cost of implementing new functionality. |
 
-**Cost optimization tips**:
-- Flex Consumption is cheapest for event-driven fraud signal processing at low-to-medium volume
-- Premium plan justified only if cold starts are unacceptable and volume is high
-- Set function timeout low to avoid runaway functions consuming RU budget
+---
 
-### Azure Monitor
+## Design for Rate Optimization
 
-| Item | Pricing |
+> **Goal**: Increase efficiency without redesigning, renegotiating, or sacrificing functional or nonfunctional requirements.
+
+| Approach | Benefit |
 |---|---|
-| Log Analytics ingestion | Per GB ingested |
-| Log Analytics retention | Free up to 31 days; per GB/month after |
-| Metrics | Free for standard platform metrics |
-| Application Insights | Per GB ingested (5 GB/month free) |
+| Identify resources that have **stable or predictable usage patterns** over time. Optimize costs by prepurchasing these resources to take advantage of available discounts. Collaborate with your licensing team to influence future purchasing agreements and renewal strategies. | Microsoft offers discounted rates for predictable, long-term commitments to specific resources or resource categories. These resources incur lower costs during the usage period and can be amortized over time. |
+| Explore alternatives that don't require additional licensing. Consider options like **hybrid use and preproduction subscription pricing**. | You'll be able to reduce licensing costs by taking advantage of options that give you usage rights to the same or comparable technologies at a lower cost. |
+| Use **consumption-based pricing** when it's more cost effective. | You'll pay for what you use. This option might be more expensive than a fully utilized prepaid option. However, if you don't expect to fully utilize pre-purchased compute, pay-as-you-go might be a better choice. |
+| Use **fixed-price billing** instead of consumption-based billing for a resource when its utilization is high and predictable and a comparable SKU or billing option is available. | When utilization is high and predictable, the fixed-price model usually costs less and often supports more features. |
+| Where possible, **co-locate usage with other workloads**, resources, and teams to reduce financial and operational costs. | Shared resources are managed centrally and provisioned with higher capacity to support multiple workloads, allowing costs to be distributed across teams. |
+| Deploy to **lower-cost regions**, provided there are no compromises to functional or nonfunctional requirements. Evaluate regional options for each environment individually. | Using premium regions only where necessary can lead to significant savings. Savings from non-production environments can be reallocated to other priorities. |
+| Prefer services that make it easier to **achieve higher density**. Consider the potential tradeoffs, especially on security boundaries. | As density increases, the amount of resources that you need to run a workload decreases. This decreases cost per unit and the cost of management. |
 
-**Cost optimization tips**:
-- Use diagnostic settings sampling (not all logs need 100% sampling)
-- Route verbose debug logs to Storage (cheap archival) rather than Log Analytics (premium query)
-- Set daily ingestion cap on non-production workspaces
-- Use workspace-based Application Insights (shared workspace pricing) vs classic instances
+---
 
-## Cost Estimation: Fraud Detection at 10K TPS (East US, Monthly)
+## Monitor and Optimize Over Time
 
-| Component | Configuration | Est. Monthly Cost |
-|---|---|---|
-| Event Hubs | Standard, 10 TU, ~24 h/day | ~$220 |
-| Stream Analytics | 6 SUs × 24 h × 30 days | ~$475 |
-| Cosmos DB | Autoscale max 150K RU/s, ~2 TB storage | ~$2,400 |
-| AKS | 3× D4s_v5 nodes (system) + 6× D8s_v5 (user) | ~$2,100 |
-| Azure Functions | Flex Consumption, ~1M executions/day | ~$150 |
-| Azure Monitor | ~50 GB/day ingestion | ~$750 |
-| **Total (approximate)** | | **~$6,100/month** |
+> **Goal**: Continuously right-size investment as your workload evolves with the ecosystem.
 
-*Note: Highly approximate; actual costs depend on query complexity, data sizes, and region. Use Azure Pricing Calculator for accurate estimates.*
+What was important yesterday might not be important today. As you learn through evaluation of production workloads, expect changes in architecture, business requirements, processes, and even team structure.
 
-## Cost Estimation: Scale to 100K TPS (delta from 10K)
+| Approach | Benefit |
+|---|---|
+| Build capabilities in the system that **capture and classify expense**. | You'll be able to calculate the costs that reveal technical and business perspectives at different billing boundaries. You'll also be able to conduct regular reviews and drive showback and chargeback processes. |
+| Implement **cost alerts** when spending approaches predefined budget thresholds. Regularly review and adjust these alerts to ensure they remain aligned with evolving usage patterns. | Proactive notifications help prevent budget overruns and support timely decision-making. |
+| Continuously **evaluate and adjust architecture design decisions** around cost of resources, operations, and paid support. | Regular reviews of metrics, performance data, billing reports, and feature usage might lead to fine-tuning that can reduce costs. |
+| **Decommission resources** that are underutilized, unused, obsolete, or can be replaced with more efficient alternatives. Regularly delete unnecessary data. | By resizing or removing underutilized resources, or even changing SKUs, you can reduce costs. Shutting down unused resources and deleting data when you no longer need it reduces waste and frees up funds. |
 
-| Component | Change | Delta |
-|---|---|---|
-| Event Hubs | Upgrade to Premium, 8 PUs | +$1,800 |
-| Stream Analytics | Scale from 6 to 60 SUs | +$4,750 |
-| Cosmos DB | Scale max RU/s to 1,000K | +$13,600 |
-| AKS | Double user node pool | +$2,100 |
-| Azure Monitor | 5× log volume | +$3,000 |
-| **Total increase** | | **~+$25,250/month** |
+---
 
-## Cost Governance
+## Design Review Checklist for Cost Optimization (CO:01–CO:14)
 
-### Tagging Strategy
-Tag all resources with:
-- `environment`: prod / staging / dev
-- `workload`: fraud-detection
-- `component`: event-ingestion / stream-processing / state-store / api
-- `cost-center`: team or business unit
-
-### Budgets and Alerts
-- Set Azure Cost Management budget alerts at 80% and 100% of monthly budget
-- Configure anomaly alerts to catch unexpected spikes (e.g., accidental test load on production)
-
-### Showback / Chargeback
-- Use Cost Management views filtered by tag to generate per-team cost reports
-- Review "cost per 1M transactions" monthly — this is your unit economics metric
+1. **CO:01 — Financial Culture**: Build organizational accountability for spending decisions
+2. **CO:02 — Cost Modeling**: Establish budgets with contingency buffers
+3. **CO:03 — Cost Monitoring**: Track daily expenses with automated alerts
+4. **CO:04 — Spending Controls**: Implement governance policies and resource limits
+5. **CO:05 — Rate Optimization**: Negotiate favorable pricing agreements
+6. **CO:06 — Billing Alignment**: Match resource usage to billing structures
+7. **CO:07 — Component Optimization**: Remove underutilized features and resources
+8. **CO:08 — Environment Costs**: Strategically configure nonproduction systems
+9. **CO:09 — Flow Prioritization**: Align spending with business priorities
+10. **CO:10 — Data Management**: Optimize storage, tiering, and retention strategies
+11. **CO:11 — Code Efficiency**: Reduce resource consumption through optimization
+12. **CO:12 — Scaling Strategy**: Evaluate cost-effective scaling approaches
+13. **CO:13 — Personnel Efficiency**: Reduce task duration without sacrificing quality
+14. **CO:14 — Consolidation**: Centralize resources to increase density

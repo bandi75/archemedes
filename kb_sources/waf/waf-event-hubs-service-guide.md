@@ -1,174 +1,176 @@
-<!-- source_url: https://learn.microsoft.com/en-us/azure/well-architected/service-guides/event-hubs -->
+<!-- source_url: https://learn.microsoft.com/en-us/azure/well-architected/service-guides/azure-event-hubs -->
 <!-- publication_date: 2025-10-01 -->
 <!-- category: waf -->
 
-# Azure Well-Architected Framework — Event Hubs Service Guide
+# Architecture Best Practices for Azure Event Hubs — Well-Architected Framework Service Guide
 
-This guide provides pillar-by-pillar WAF recommendations for Azure Event Hubs. Use it when Event Hubs is part of your architecture (e.g., real-time fraud detection, IoT ingestion, telemetry pipelines).
+Azure Event Hubs is a real-time data streaming platform and event ingestion service that can receive and process millions of events per second. It provides a unified streaming platform with time-retention buffer, decoupling event producers from event consumers. Event Hubs natively integrates with Azure analytics services and supports multiple protocols including AMQP, Apache Kafka, and HTTPS.
 
 ---
 
 ## Reliability
 
-### Design Recommendations
+The purpose of the Reliability pillar is to provide continued functionality by **building enough resilience and the ability to recover fast from failures**.
 
-**1. Use zone-redundant namespaces**
-- Standard, Premium, and Dedicated tiers support availability zone redundancy automatically in supported regions
-- Zone redundancy distributes Event Hubs brokers across 3 availability zones with no extra cost or configuration
-- Verify the target region supports zones before selecting it (East US: supported)
+### Workload Design Checklist
 
-**2. Enable Geo-Disaster Recovery (Geo-DR)**
-- Configure a Geo-DR pairing between a primary and secondary namespace
-- Geo-DR replicates namespace **metadata** (event hubs, consumer groups, authorization rules) to the secondary
-- Data (events already ingested) is NOT replicated — for data replication, use Geo-replication (Premium/Dedicated)
-- Initiate failover via the primary namespace; DNS CNAME switches to secondary; consumers reconnect
-- RPO for metadata: near-zero; RPO for events: depends on retention
+- **Review quotas and limits that might restrict your design**: Analyze quotas and limits that affect architecture decisions. For large-scale scenarios, be aware of the partition limits associated with different service tiers as they differ significantly. Determine how many throughput units or processing units you need. These settings define message ingestion capacity and establish scaling boundaries. Keep payloads within the maximum message size for your chosen tier. Choose appropriate message retention periods that match the service tier and meet recovery and replay requirements. Plan your application architecture around consumer group limits for each namespace.
 
-**3. Use Geo-replication for data-level protection (Premium/Dedicated)**
-- Geo-replication replicates event data (not just metadata) to the secondary region
-- Enables active-active reads from both regions
-- Available only on Premium and Dedicated tiers
-- Required for 99.99% SLA on both ingestion and consumption paths
+- **Anticipate potential failures through failure mode analysis**:
 
-**4. Set appropriate retention**
-- Minimum retention: enough to recover from a downstream outage (consumer down for 24 h → need 24 h retention minimum)
-- For fraud detection: set 7-day retention (Standard) to handle weekend outages without data loss
-- Consumer group offsets are maintained by consumers (in Cosmos DB, Azure Storage, or Event Hubs SDK) — ensure offset storage is also highly available
+  | Failure | Mitigation |
+  |---|---|
+  | Namespace unavailable | Implement monitoring and alerting for early detection. Plan for cross-region failover capabilities. |
+  | Partition unavailable | Design partition distribution strategies to prevent single points of failure. Implement retry logic with exponential backoff in producers and consumers. |
+  | High message volumes exceed throughput limits | Plan for capacity scaling to handle traffic spikes. Implement client-side throttling protection by using circuit breaker patterns. |
 
-**5. Implement consumer checkpointing**
-- Consumers must checkpoint their offset (last processed event position) to durable storage
-- Loss of checkpoint means reprocessing from last checkpoint, not from start (if retention allows)
-- Use Azure Blob Storage for checkpoint storage in Event Processor Host or the Azure SDK EventProcessorClient
+- **Define reliability targets for event streaming workloads**: Set clear reliability targets to guide architecture decisions. Define SLOs that include message ingestion availability, consumer processing latency, and end-to-end delivery performance. Set availability targets that align with SLA guarantees of 99.95% for the Standard tier and 99.99% for the Dedicated tier.
 
-### Reliability Anti-Patterns
-- ❌ Single namespace with no Geo-DR — single region failure takes down ingestion
-- ❌ Retention shorter than downstream consumer recovery time — causes data loss after consumer outage
-- ❌ No consumer group isolation — multiple consumers sharing one consumer group will miss events
+- **Implement redundancy strategies to eliminate single points of failure**: Add multiple redundancy layers, including availability zones, geo-replication, and partition distribution. Enable zone-level redundancy in Premium and Dedicated tiers for automatic replication across availability zones with transparent failover within the same region. Use geo-replication for Dedicated tier namespaces to enable real-time asynchronous replication of events and metadata across multiple regions.
+
+- **Design for reliable scaling to handle variable workloads**: Configure infrastructure scaling through auto-inflate in the Standard and Premium tiers. This feature automatically scales throughput units during traffic spikes. Use the Dedicated tier for predictable performance with reserved capacity. Plan partition scaling carefully because you can't decrease the partition count after creation.
+
+- **Implement monitoring and alerting for reliability**: Configure Azure Monitor to collect metrics. Track message ingestion volume, throughput utilization, and consumer lag. Configure thresholds that align with SLOs and business impact severity.
+
+- **Configure Event Hubs for self-preservation and graceful degradation**: Event Hubs doesn't include a built-in dead-letter queue. Implement custom patterns to handle poison messages, and use circuit breaker patterns to protect traffic during recovery scenarios. Isolate consumers by creating separate consumer groups with only one active receiver for each group. Enable the capture feature to provide durable storage for event replay and recovery scenarios.
+
+- **Do reliability testing to validate resilience**: Test partition availability, consumer lag recovery, and throughput scaling under realistic streaming conditions. Run stress testing to validate performance under expected and peak traffic conditions. Test the solution's resilience with chaos engineering and by introducing intentional failures. Perform failover testing to verify geo-disaster recovery and zone redundancy capabilities.
+
+- **Design disaster recovery strategy for business continuity**: Use geo-disaster recovery for Standard and Premium tiers or geo-replication for the Dedicated tier to provide regional failover capabilities. Define your recovery time objective (RTO) and recovery point objective (RPO) based on business requirements. Choose DR patterns, like active-passive for cost optimization or active-active for minimal RTO.
+
+### Configuration Recommendations
+
+| Recommendation | Benefit |
+|---|---|
+| Enable availability zone redundancy when you create a namespace by selecting an Azure region with availability zone support. | Provides automatic datacenter-level failover with minimal recovery time and no application changes. |
+| Enable geo-replication for Dedicated tier namespaces to replicate events and metadata across multiple regions in real time. Configure primary and secondary regions with appropriate network connectivity and monitor replication lag metrics. | Enables regional failover capabilities and minimal data loss during regional outages. |
+| Set up geo-disaster recovery pairing between primary and secondary namespaces, then configure an alias for the namespace pair. Update connection strings to use the alias for transparent failover capabilities. | Enables cross-region failover capability with transparent client failover. Ensures business continuity during regional outages. |
+| Implement hash-based partition keys for event distribution and set the appropriate partition count during event hub creation. Monitor partition-level metrics for hotspot detection and load balancing validation. | Prevents partition hotspots and enables horizontal scaling through balanced load distribution across partitions. |
+| Enable auto-inflate for Standard tier namespaces and set maximum throughput units based on peak load projections. Use the Premium tier for sustained high-throughput workloads that require predictable performance. | Prevents ingestion throttling through automatic capacity scaling and maintains consistent availability during load variations without manual intervention. |
+| Configure Event Hubs alerts in Azure Monitor for consumer lag, throughput utilization, and throttling events. Set thresholds that align with SLOs. Enable alerts for connection and authentication failures, then create alert action groups for incident response. | Enables early problem detection, reduces incident response time, and provides capacity planning insights. |
 
 ---
 
 ## Security
 
-### Design Recommendations
+The purpose of the Security pillar is to provide **confidentiality, integrity, and availability** guarantees to the workload.
 
-**1. Use managed identity for authentication**
-- Prefer Entra ID RBAC over Shared Access Signatures (SAS) for service-to-service auth
-- Assign `Azure Event Hubs Data Sender` to producer managed identities
-- Assign `Azure Event Hubs Data Receiver` to consumer managed identities (ASA, Functions, AKS pods)
-- Never embed SAS keys in code; if SAS is required, use short-lived keys stored in Key Vault
+### Workload Design Checklist
 
-**2. Disable public network access**
-- Enable private endpoints for Event Hubs in your VNet
-- Set `publicNetworkAccess: Disabled` on the namespace after private endpoints are configured
-- Use private DNS zone `privatelink.servicebus.windows.net` for name resolution
+- **Establish a security baseline for Event Hubs workloads**: Review the Event Hubs security baseline that addresses key security domains. Apply Microsoft Cloud Security Benchmark controls for Event Hubs that cover encryption for data at rest and in transit, network isolation capabilities, and granular access control mechanisms.
 
-**3. Enable IP firewall for allowed ranges (if private endpoints not feasible)**
-- Restrict ingress to known IP ranges or service tags
-- Use VNet service endpoints as an intermediate option before full private endpoint migration
+- **Implement segmentation strategies to isolate Event Hubs resources and control access boundaries**: Use Microsoft Entra ID with RBAC to create logical access control boundaries. Set up network segmentation to isolate streaming traffic. Use virtual network integration and private connectivity options to prevent public internet exposure.
 
-**4. Use customer-managed keys (PCI-DSS scope)**
-- For PCI-DSS environments, configure CMK encryption for Event Hubs using Azure Key Vault
-- Requires Premium or Dedicated tier
-- Key Vault must have soft-delete and purge protection enabled
+- **Set up identity and access management**: Use Microsoft Entra ID as the trusted identity provider for centralized authentication and authorization. Configure role-based authorization for granular access controls through SendOnly and ListenOnly policies. Use managed identities to remove credential management overhead for service-to-service communication patterns.
 
-**5. Enable diagnostic logging**
-- Enable `OperationalLogs`, `ArchiveLogs`, `AutoScaleLogs`, `KafkaCoordinatorLogs` diagnostic categories
-- Route to Log Analytics for alerting and retention; route to Storage for long-term archival
+- **Add network security controls to protect Event Hubs traffic and connectivity**: Use private endpoints, service endpoints, and IP firewall rules to secure streaming traffic from unauthorized access. Configure private endpoints to eliminate internet exposure. Enable service endpoints to provide secure virtual network connectivity without public routing.
 
-### Security Anti-Patterns
-- ❌ Using root namespace connection string — grants full admin access; use scoped SAS or managed identity
-- ❌ Disabling TLS or allowing TLS < 1.2 — not permitted in PCI-DSS environments
-- ❌ Public endpoint open to all IPs — unnecessary attack surface
+- **Configure data encryption for Event Hubs event streams and metadata**: Enable customer-managed keys for enhanced encryption control and regulatory compliance. Use double encryption for scenarios that need extra protection. Set TLS 1.2 as the minimum configuration for secure client connections and inter-service communication. Establish key rotation strategies with operational procedures for customer-managed keys.
+
+- **Harden Event Hubs namespace and entity configurations to reduce attack surface**: Turn off auto-inflate when you don't need it for capacity management. Disable other unused features and protocols to remove potential attack vectors. Remove unused consumer groups and event hubs.
+
+- **Secure Event Hubs connection strings and access keys through proper secret management**: Use managed identities as the preferred authentication method. When you must use connection strings or SAS tokens, store them securely and rotate them regularly. Store Event Hubs connection strings in Azure Key Vault. Deploy short-lived SAS tokens to reduce security exposure risk.
+
+- **Implement security monitoring and logging**: Configure diagnostic logging to capture authentication events, data plane access patterns, and configuration changes. Monitor network access patterns to detect unauthorized access. Enable threat detection to alert you about suspicious activity including unusual access volumes or unknown sources.
+
+### Configuration Recommendations
+
+| Recommendation | Benefit |
+|---|---|
+| Use Microsoft Entra ID to authorize access to Event Hubs resources. Assign built-in roles including Data Owner, Data Sender, and Data Receiver at appropriate scope levels. Scope assignments at namespace, event hub, or consumer group levels for granular access control. | Provides granular access control across scopes and clearly separates producer, consumer, and administrative operations. |
+| Deploy private endpoints within dedicated subnets for network isolation and configure NSGs to control traffic flow. Alternatively, apply IP firewall rules at the namespace level for known source networks. | Removes public internet exposure through private connectivity and aligns network-level traffic control with organizational security zones. |
+| Enable Microsoft Entra ID authentication at the namespace level and disable SAS authentication where managed identities are available. Create conditional access policies that require compliant devices. | Namespace-level enablement centralizes authentication configuration across Event Hubs entities. Disabling SAS removes shared credential management overhead. |
+| Set the minimum TLS version to 1.2 at the namespace scope to block older, vulnerable protocols. Enable diagnostic logging and query for TLS version violations in Log Analytics to identify non-compliant clients. | TLS 1.2 prevents the exploitation of legacy SSL or TLS vulnerabilities that can compromise data in transit. |
+| Create an RSA 2048 key in Key Vault and assign the Key Vault Crypto Service Encryption User role to the namespace managed identity. Configure the namespace to use a customer-managed key and set a 90-day rotation policy in Key Vault. Enable double encryption when you create a namespace because you can't add this capability later. | CMK configuration provides regulatory compliance for data sovereignty requirements. The 90-day rotation policy balances security with operational stability. Double encryption at creation time provides an extra layer of protection from the start. |
+| Store connection strings in Key Vault with a 90-day expiration date set. If you need SAS tokens, generate entity-level tokens with a one-hour expiry time and use Send or Listen permissions only. | 90-day expiration enforces regular credential rotation. One-hour SAS token expiry limits the credential exposure window. Send/Listen-only permissions reduce blast radius in case of a token compromise. |
+| Send diagnostic logs to a Log Analytics workspace and add the Event Hubs data connector in Microsoft Sentinel. Create an alert for the `RequestsAuthenticationError` metric with a threshold more than 10 per hour to detect authentication attacks. | The Microsoft Sentinel connector centralizes Event Hubs security events. The `RequestsAuthenticationError` metric alert notifies you of authentication attacks in real time. |
 
 ---
 
 ## Cost Optimization
 
-### Design Recommendations
+Cost Optimization focuses on **detecting spend patterns, prioritizing investments in critical areas, and optimizing in others** to meet the organization's budget.
 
-**1. Right-size throughput units**
-- 1 TU = 1 MB/s ingress, 2 MB/s egress
-- Monitor `IncomingBytes` and `OutgoingBytes` metrics to measure actual throughput
-- Start with minimum TUs; enable auto-inflate with a maximum that covers peak + 20% buffer
+### Workload Design Checklist
 
-**2. Choose the right tier**
-- Basic: only for very low volume (< 100 events/s), no consumer groups
-- Standard: right for most production workloads up to ~50 MB/s; auto-inflate scales to 100 TUs
-- Premium: required > 100 TUs, > 32 partitions, > 7-day retention, or when dedicated compute is needed
-- Dedicated: only for very large organizations needing > 200 MB/s with fully isolated compute
+- **Create and maintain a cost model for Event Hubs workloads**: Assess throughput unit or processing unit requirements based on peak and average traffic patterns for accurate capacity planning. Include auto-inflate costs and an analysis of service tiers—Basic, Standard, Premium, and Dedicated. Calculate message retention storage costs based on retention periods and message volumes. Include Event Hubs Capture costs for operation and destination storage.
 
-**3. Archive with Capture**
-- Event Hubs Capture writes events to Azure Blob Storage or ADLS Gen2 at low cost
-- Cheaper than long retention within Event Hubs itself
-- Enables batch analytics on historical events without re-reading from the live stream
+- **Implement cost monitoring and budget alerting**: Configure Microsoft Cost Management for granular cost tracking and analysis. Apply resource tagging for accurate cost allocation across workloads and business units. Activate cost anomaly detection to flag unexpected spending patterns. Monitor throughput unit utilization and message retention storage costs.
 
-**4. Delete unused consumer groups**
-- Consumer groups have no direct cost, but they hold state (offsets); orphaned consumer groups cause confusion
+- **Optimize Event Hubs capacity planning and autoscaling configuration for cost efficiency**: Analyze traffic patterns to determine optimal throughput unit or processing unit allocation. Monitor partition utilization for optimization opportunities. Set auto-inflate maximum limits in Standard tier deployments to prevent unexpected cost increases. Fine-tune partition count for efficient throughput utilization and consumer scaling. Use load testing to validate capacity assumptions.
 
-### Cost Optimization Anti-Patterns
-- ❌ Provisioning Premium tier when Standard + auto-inflate would suffice
-- ❌ Long retention (90 days) without Capture — paying for hot storage when cold storage would do
-- ❌ Using Dedicated tier for dev/test — pay per cluster regardless of usage
+- **Establish cost guardrails and governance policies**: Create Azure Policy definitions that enforce throughput unit limits and restrict service tier choices. Define retention period policies to prevent long-term storage cost growth. Set up approval workflows for high-capacity deployments and tier upgrades.
+
+- **Optimize development and testing environments to reduce costs**: Use the Basic or Standard tier with minimal throughput units and shorter retention periods for development and testing scenarios. Implement automated lifecycle management to schedule shutdowns during non-business hours.
+
+### Configuration Recommendations
+
+| Recommendation | Benefit |
+|---|---|
+| Configure Cost Management for granular cost tracking. Create budgets with 50%, 75%, 90%, and 100% alert thresholds for multi-stage cost control warnings. Set up automated cost reports on weekly and monthly schedules. | Enables accurate cost allocation and chargeback, and provides early warnings for cost overruns through multi-level alerting. |
+| Select the right service tier (Basic, Standard, Premium, or Dedicated) based on economic analysis. Configure auto-inflate with maximum throughput unit limits based on budget constraints. | Matching the tier to workload needs optimizes costs. Setting a maximum for auto-inflate prevents unexpected cost increases. |
+| Configure retention periods aligned with data access patterns and compliance requirements. Enable Event Hubs Capture to use Azure Blob Storage or Azure Data Lake Store for long-term storage. Choose Cool or Archive storage tiers for captured data that you rarely access. | Reduces storage costs through optimized retention policies and provides affordable long-term archival options. |
+| Deploy Azure Policy definitions that set throughput-unit caps and restrict allowed tiers to enforce cost controls. Set up a policy-exemption approval workflow for controlled flexibility. | Provides automated cost governance through policy-based controls and reduces cost-overrun risks. |
+| Create Automation runbooks to shut down lower environments on weeknights and weekends to reduce runtime costs. | Reduces development and testing costs through automated lifecycle management. |
 
 ---
 
 ## Operational Excellence
 
-### Design Recommendations
+Operational Excellence primarily focuses on procedures for **development practices, observability, and release management**.
 
-**1. Monitor key metrics**
+### Key Checklist Items
 
-| Metric | Alert Threshold | Action |
-|---|---|---|
-| `ThrottledRequests` | > 0 sustained | Increase TUs or enable auto-inflate |
-| `IncomingMessages` | Drop to 0 for > 5 min | Check producer health |
-| `OutgoingMessages` | Drop to 0 for > 5 min | Check consumer health |
-| `ActiveConnections` | Near connection limit for tier | Check for connection leaks |
-| `CaptureBacklog` | Growing | Capture not keeping up — check Capture config |
-| `ConsumerLag` | Growing beyond threshold | Consumer falling behind; scale consumer |
+- Apply safe deployment practices for configuration changes (blue-green, canary deployments)
+- Design IaC strategies for resource management (Bicep or Terraform)
+- Establish CI/CD pipelines for Event Hubs infrastructure, applications, and schemas
+- Implement monitoring with custom dashboards, diagnostic logging with correlation IDs, and Application Insights distributed tracing
+- Design operational runbooks and incident response procedures for specific Event Hubs failure scenarios
+- Automate consumer group management, partition scaling analysis, throughput unit adjustments, and consumer lag monitoring
 
-**2. Set up Geo-DR failover runbook**
-- Document the failover procedure: initiate via portal or CLI, verify DNS propagation, verify consumers reconnect
-- Practice failover in staging environment at least quarterly
-- Automate health checks that trigger an alert when primary region is unreachable
+### Key Configuration Recommendations
 
-**3. Use Infrastructure as Code**
-- Provision Event Hubs namespaces, event hubs, consumer groups, and auth rules via Bicep or Terraform
-- Never configure auth rules manually in the portal — they will drift from IaC state
-
-**4. Tag resources for cost attribution**
-- Tag namespaces with `workload`, `environment`, `component`, `cost-center`
-
-### Operational Anti-Patterns
-- ❌ No consumer lag monitoring — consumer falling behind is a silent failure
-- ❌ Manual Geo-DR failover with no runbook — during an incident, no one knows the steps
+| Recommendation | Benefit |
+|---|---|
+| Create IaC templates in Bicep or Terraform that define the Event Hubs namespace, event hub configurations, partition counts, throughput units, and consumer groups. | Ensures consistent deployment across environments. Reduces manual configuration errors and enables version-controlled infrastructure changes. |
+| Configure Azure Monitor through custom dashboards, diagnostic logging with structured correlation IDs, and Application Insights integration for end-to-end transaction tracing. | Provides operational visibility and real-time monitoring capabilities. Supports efficient troubleshooting with distributed tracing, auditing, and anomaly detection. |
+| Develop operational runbooks using Azure Monitor workbooks. Document consumer group management, throughput scaling steps, partition rebalancing procedures, and troubleshooting steps for consumer lag remediation. | Standardizes operational procedures. Speeds up incident response, ensures consistent practices across operational teams. |
 
 ---
 
 ## Performance Efficiency
 
-### Design Recommendations
+Performance Efficiency is about **maintaining user experience even when there's an increase in load** by managing capacity.
 
-**1. Maximize partition parallelism**
-- Set partition count to at least equal to the number of consumer instances you plan to run
-- Rule of thumb: partitions ≥ max expected concurrent consumers per consumer group
-- For fraud detection at 10K TPS: 32 partitions (Standard max) allows up to 32 parallel consumers per consumer group
+### Key Checklist Items
 
-**2. Use batch publishing**
-- Send events in batches (EventDataBatch) rather than one at a time
-- Batch publishing dramatically improves throughput and reduces per-event overhead
-- Max batch size: 1 MB (Standard/Premium); set to leave headroom for metadata
+- Plan capacity for Event Hubs workload requirements (assess peak ingestion rates, concurrent producers, consumer throughput)
+- Choose Event Hubs tier and SKU based on performance needs (Standard: 32 partitions, 1–7 day retention; Premium: enhanced networking, improved SLA; Dedicated: up to 1,024 partitions, 90-day retention)
+- Design Event Hubs scaling strategy (throughput unit scaling vs. partition scaling)
+- Implement performance monitoring (baseline ingestion rates, consumer lag, throughput unit utilization)
+- Conduct performance testing (realistic producer event rates, consumer patterns, partition key distribution)
+- Optimize configuration and design patterns (connection pooling, batch sizes, compression, retry policies)
 
-**3. Choose partition key carefully**
-- Good partition key: `accountId` or `customerId` — high cardinality, even distribution
-- Ensures all events for an account go to the same partition (enables stateful per-account processing)
-- Avoid `eventType` (low cardinality → hot partitions) or random key (no ordering guarantee per entity)
+### Key Configuration Recommendations
 
-**4. Monitor and act on throughput limits**
-- Monitor `IncomingBytes` vs TU capacity; alert when consistently > 70% of TU capacity
-- Enable auto-inflate before hitting limits — once throttled, events are rejected (not buffered)
+| Recommendation | Benefit |
+|---|---|
+| Set initial throughput units based on capacity planning estimates. Enable auto-inflation. Configure maximum throughput unit limits for cost control and set utilization threshold triggers at 80–90% utilization. | Automatic scaling removes manual intervention during traffic spikes and optimizes costs based on demand. |
+| Implement the event processor host or Azure Functions to manage partitions automatically and avoid manual assignment. Configure prefetch settings to improve throughput. Monitor consumer lag metrics per partition to identify processing bottlenecks. | Automatic partition distribution across consumer instances simplifies scaling. Consumer lag visibility identifies processing bottlenecks for targeted optimization. |
+| Configure dedicated consumer groups for Stream Analytics and Azure Functions to optimize downstream processing. Tune checkpoint frequency based on processing patterns. | Dedicated consumer groups optimize downstream processing. Optimized checkpointing balances resilience and performance requirements. |
+| Configure batch sizes, prefetch values, and retry policies in SDK settings to improve producer and consumer performance. Use connection pooling to reduce overhead and enable compression with schema registry integration. | Batching and prefetch tuning optimizes throughput. Connection pooling and compression reduce network overhead. |
 
-### Performance Anti-Patterns
-- ❌ Low partition count (e.g., 4) for a 100K TPS workload — limits consumer parallelism and throughput
-- ❌ Sending events one at a time — 10–100× worse throughput than batching
-- ❌ All events sharing the same partition key — one hot partition, all others idle
+---
+
+## Azure Policies
+
+Built-in Azure Policy definitions for Event Hubs you can audit:
+- Event Hubs namespace uses a customer-managed key for encryption
+- Event Hubs namespaces have double encryption enabled
+- Resource logs in Event Hubs are enabled
+
+## Related Resources
+
+- [Event Hubs overview](/azure/event-hubs/event-hubs-about)
+- [Stream processing with Azure Stream Analytics](/azure/architecture/reference-architectures/data/stream-processing-stream-analytics)
+- [Event Hubs monitoring](/azure/event-hubs/monitor-event-hubs)
