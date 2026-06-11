@@ -85,3 +85,20 @@ class DiffType(str, Enum):
     REMOVED = "removed"
     MODIFIED = "modified"
     UNCHANGED = "unchanged"
+
+
+class SocratesDepth(str, Enum):
+    LIGHT = "light"
+    STANDARD = "standard"
+    DEEP = "deep"
+
+
+class PersonaName(str, Enum):
+    DEVILS_ADVOCATE = "devils_advocate"
+    SRE_OPS_LEAD = "sre_ops_lead"
+    SECURITY_ARCHITECT = "security_architect"
+    FINOPS_LEAD = "finops_lead"
+    DELIVERY_LEAD = "delivery_lead"
+    CUSTOMER_BIZ_SPONSOR = "customer_biz_sponsor"
+    DATA_ARCHITECT = "data_architect"
+    SYNTHESIZER = "synthesizer"

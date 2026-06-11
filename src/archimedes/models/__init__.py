@@ -14,11 +14,26 @@ from .artifacts import (
 from .claims import ClaimRecord
 from .change import ChangeEvent, DependencyImpactResult
 from .diffs import ArtifactDiff, FieldDiff
-from .enums import DiffType, QualityGateStatus, SourceFreshness, StageName, StageStatus
+from .enums import (
+	DiffType,
+	PersonaName,
+	QualityGateStatus,
+	SocratesDepth,
+	SourceFreshness,
+	StageName,
+	StageStatus,
+)
 from .evidence import EvidenceSource
 from .patches import ApplyPatchResult, StagePatch
 from .quality_gates import QualityGateCheck, QualityGateResult
 from .session import ArchitectureSession, DEPENDENCY_RULES, DependencyMap, StageExecution
+from .socrates import (
+	PersonaAnalysis,
+	PersonaFinding,
+	SocratesReviewContext,
+	SocraticReview,
+	SocraticSynthesis,
+)
 
 __all__ = [
 	"ArchimedesModel",
@@ -28,6 +43,8 @@ __all__ = [
 	"StageName",
 	"StageStatus",
 	"QualityGateStatus",
+	"SocratesDepth",
+	"PersonaName",
 	"RequirementContent",
 	"OptionsContent",
 	"MermaidDiagram",
@@ -52,4 +69,9 @@ __all__ = [
 	"ArchitectureSession",
 	"DependencyMap",
 	"DEPENDENCY_RULES",
+	"SocratesReviewContext",
+	"PersonaFinding",
+	"PersonaAnalysis",
+	"SocraticSynthesis",
+	"SocraticReview",
 ]
