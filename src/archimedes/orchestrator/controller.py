@@ -59,7 +59,13 @@ class StageController:
     storage: SupportsControllerStorage
     pattern_detector: PatternDetector = field(default_factory=PatternDetector)
 
-    def process_message(self, session_id: str, user_message: str) -> OrchestratorResponse:
+    def process_message(
+        self,
+        session_id: str,
+        user_message: str,
+        *,
+        idempotency_key: str | None = None,
+    ) -> OrchestratorResponse:
         session = self.storage.read_session(session_id)
         if session is None:
             raise ValueError(f"Session not found: {session_id}")
@@ -93,7 +99,12 @@ class StageController:
             )
 
         stage = self._resolve_active_stage(session)
-        apply_result = self._execute_stage(session, stage, user_message)
+        apply_result = self._execute_stage(
+            session,
+            stage,
+            user_message,
+            idempotency_key=idempotency_key,
+        )
 
         if not apply_result.applied:
             return OrchestratorResponse(
@@ -123,7 +134,14 @@ class StageController:
             requires_user_action=next_stage is None,
         )
 
-    def _execute_stage(self, session: ArchitectureSession, stage: StageName, user_message: str):
+    def _execute_stage(
+        self,
+        session: ArchitectureSession,
+        stage: StageName,
+        user_message: str,
+        *,
+        idempotency_key: str | None = None,
+    ):
         base_version = session.latest_artifact_versions.get(stage, 0)
         if stage == StageName.PATTERN_DETECTION:
             patch = self.pattern_detector.detect(
@@ -139,6 +157,8 @@ class StageController:
                 base_version=base_version,
                 user_message=user_message,
             )
+        if idempotency_key:
+            patch.idempotency_key = idempotency_key
         return self.state_manager.apply_patch(patch)
 
     def _generic_stage_patch(
