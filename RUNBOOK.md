@@ -31,7 +31,8 @@ What works now:
 Important behavior:
 
 - FastAPI defaults to in-memory storage unless `ARCHIMEDES_API_STORAGE_BACKEND=cosmos` is set.
-- In Cosmos mode, startup creates the database and required containers if they do not already exist.
+- Cosmos DB serverless was already provisioned in backlog task P0-T06b.
+- In Cosmos mode, startup validates/creates the database and required containers if they do not already exist.
 - Cosmos containers use `/session_id` as the partition key.
 
 ## 2. Prerequisites
@@ -40,14 +41,14 @@ Install locally:
 
 - Python 3.11 or newer
 - Git
-- Azure CLI, for Phases B through D
-- A terminal that can run PowerShell commands
+- Azure CLI, for Cosmos and hosted deployment steps
+- Git Bash or another Bash-compatible terminal
 
 You do not need Docker for the local phases.
 
 Confirm tools:
 
-```powershell
+```bash
 python --version
 git --version
 az version
@@ -74,38 +75,38 @@ pytest.ini                              test config
 
 From the repo root:
 
-```powershell
-cd D:\Work\Challenges\Microsoft-Agents-League\src\archemedes
+```bash
+cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+source .venv/Scripts/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 Set `PYTHONPATH` for this shell:
 
-```powershell
-$env:PYTHONPATH = "src"
+```bash
+export PYTHONPATH=src
 ```
 
 Run the tests:
 
-```powershell
+```bash
 pytest
 ```
 
 Expected result at the time this runbook was written:
 
 ```text
-79 passed, 1 skipped
+81 passed, 1 skipped
 ```
 
 ## 5. Environment Files
 
 Start from the sample:
 
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env
 ```
 
 For the fastest real-Cosmos path, use:
@@ -156,40 +157,46 @@ Browser -> Streamlit local :8501 -> FastAPI local :8000 -> Cosmos DB + mock KB
 
 This is the default path for the project now.
 
-### 6.0 Provision Cosmos DB
+### 6.0 Use Existing Cosmos DB
 
-Log in:
+Backlog task P0-T06b already provisioned the core Azure resources:
 
-```powershell
+```text
+Resource group:        arch-dev-rg-eus
+Cosmos DB account:    arch-dev-cosmos-eus-06102215
+Storage account:      archdevsteus06102215
+Container Apps env:   arch-dev-acaenv-eus
+App Insights:         arch-dev-ai-eus
+Key Vault:            arch-dev-kv-eus-06102215
+Region:               eastus
+Cosmos database name: archimedes
+```
+
+Log in and select the subscription:
+
+```bash
 az login
 az account show
 az account set --subscription "<subscription-id-or-name>"
 ```
 
-Create Cosmos DB for NoSQL:
+Set shell variables for the existing Cosmos account:
 
-```powershell
-$rg = "rg-archimedes-dev"
-$loc = "eastus"
-$cosmos = "cosmos-archimedes-dev"
-$db = "archimedes"
+```bash
+rg="arch-dev-rg-eus"
+loc="eastus"
+cosmos="arch-dev-cosmos-eus-06102215"
+db="archimedes"
 
-az group create --name $rg --location $loc
-
-az cosmosdb create `
-  --name $cosmos `
-  --resource-group $rg `
-  --locations regionName=$loc failoverPriority=0 `
-  --default-consistency-level Session
-
-$cosmosEndpoint = az cosmosdb show `
-  --name $cosmos `
-  --resource-group $rg `
-  --query documentEndpoint `
+cosmosEndpoint=$(az cosmosdb show \
+  --name "$cosmos" \
+  --resource-group "$rg" \
+  --query documentEndpoint \
   --output tsv
+)
 ```
 
-You do not need to manually create containers. FastAPI startup will create:
+You do not need to create the Cosmos account again. FastAPI startup will validate/create the required database containers:
 
 ```text
 architecture_sessions
@@ -212,39 +219,40 @@ Authentication options:
 
 If using key auth:
 
-```powershell
-$cosmosKey = az cosmosdb keys list `
-  --name $cosmos `
-  --resource-group $rg `
-  --query primaryMasterKey `
+```bash
+cosmosKey=$(az cosmosdb keys list \
+  --name "$cosmos" \
+  --resource-group "$rg" \
+  --query primaryMasterKey \
   --output tsv
+)
 ```
 
 ### 6.1 Start FastAPI
 
 Open terminal 1:
 
-```powershell
-cd D:\Work\Challenges\Microsoft-Agents-League\src\archemedes
-.\.venv\Scripts\Activate.ps1
-$env:PYTHONPATH = "src"
-$env:USE_MOCK_KB = "true"
-$env:ARCHIMEDES_API_VALIDATE_REQUIRED_ENV = "false"
-$env:ARCHIMEDES_API_STORAGE_BACKEND = "cosmos"
-$env:ARCHIMEDES_API_COSMOS_ENDPOINT = $cosmosEndpoint
-$env:ARCHIMEDES_API_COSMOS_DATABASE_NAME = "archimedes"
+```bash
+cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
+source .venv/Scripts/activate
+export PYTHONPATH=src
+export USE_MOCK_KB=true
+export ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
+export ARCHIMEDES_API_STORAGE_BACKEND=cosmos
+export ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint"
+export ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 
 # Use this only if managed identity / Azure CLI auth is not configured.
-# $env:ARCHIMEDES_API_COSMOS_KEY = $cosmosKey
+# export ARCHIMEDES_API_COSMOS_KEY="$cosmosKey"
 
 python -m uvicorn api.main:app --app-dir src --reload --host 127.0.0.1 --port 8000
 ```
 
 Validate:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/api/v1/health
 ```
 
 Expected status:
@@ -264,10 +272,10 @@ http://127.0.0.1:8000/docs
 
 Open terminal 2:
 
-```powershell
-cd D:\Work\Challenges\Microsoft-Agents-League\src\archemedes
-.\.venv\Scripts\Activate.ps1
-$env:ARCHIMEDES_API_URL = "http://127.0.0.1:8000/api/v1"
+```bash
+cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
+source .venv/Scripts/activate
+export ARCHIMEDES_API_URL=http://127.0.0.1:8000/api/v1
 streamlit run frontend/app.py --server.port 8501
 ```
 
@@ -281,57 +289,50 @@ http://localhost:8501
 
 Create a session:
 
-```powershell
-$body = @{
-  business_need = "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability."
-  title = "Fraud Detection Demo"
-} | ConvertTo-Json
+```bash
+session_json=$(curl -sS -X POST http://127.0.0.1:8000/api/v1/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "business_need": "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability.",
+    "title": "Fraud Detection Demo"
+  }')
 
-$session = Invoke-RestMethod `
-  -Method Post `
-  -Uri http://127.0.0.1:8000/api/v1/sessions `
-  -ContentType "application/json" `
-  -Body $body
-
-$session.session_id
+session_id=$(printf '%s' "$session_json" | python -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
+echo "$session_id"
 ```
 
 Send a message:
 
-```powershell
-$message = @{
-  message = "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability."
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/api/v1/sessions/$($session.session_id)/messages" `
-  -ContentType "application/json" `
-  -Body $message
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/messages" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability."
+  }'
 ```
 
 Check pipeline:
 
-```powershell
-Invoke-RestMethod "http://127.0.0.1:8000/api/v1/sessions/$($session.session_id)/pipeline/status"
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/sessions/${session_id}/pipeline/status"
 ```
 
 Confirm Cosmos persistence:
 
-```powershell
-az cosmosdb sql query `
-  --account-name $cosmos `
-  --resource-group $rg `
-  --database-name $db `
-  --container-name architecture_sessions `
-  --query "SELECT * FROM c WHERE c.session_id = '$($session.session_id)'"
+```bash
+az cosmosdb sql query \
+  --account-name "$cosmos" \
+  --resource-group "$rg" \
+  --database-name "$db" \
+  --container-name architecture_sessions \
+  --query "SELECT * FROM c WHERE c.session_id = '${session_id}'"
 
-az cosmosdb sql query `
-  --account-name $cosmos `
-  --resource-group $rg `
-  --database-name $db `
-  --container-name versioned_artifacts `
-  --query "SELECT c.stage, c.version FROM c WHERE c.session_id = '$($session.session_id)'"
+az cosmosdb sql query \
+  --account-name "$cosmos" \
+  --resource-group "$rg" \
+  --database-name "$db" \
+  --container-name versioned_artifacts \
+  --query "SELECT c.stage, c.version FROM c WHERE c.session_id = '${session_id}'"
 ```
 
 ### 6.4 Demo Message Sequence
@@ -362,24 +363,20 @@ Expected highlights:
 
 Create a diff after a change produced v2:
 
-```powershell
-$diffBody = @{
-  stage = "options_generation"
-  before_version = 1
-  after_version = 2
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:8000/api/v1/sessions/$($session.session_id)/diffs" `
-  -ContentType "application/json" `
-  -Body $diffBody
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/diffs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stage": "options_generation",
+    "before_version": 1,
+    "after_version": 2
+  }'
 ```
 
 List diffs:
 
-```powershell
-Invoke-RestMethod "http://127.0.0.1:8000/api/v1/sessions/$($session.session_id)/diffs?stage=options_generation"
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/sessions/${session_id}/diffs?stage=options_generation"
 ```
 
 ## 7. Phase B: Add Azure OpenAI / Foundry IQ Locally
@@ -394,7 +391,7 @@ Cosmos is already active from Phase A. This phase turns on real model and retrie
 
 ### 7.1 Azure Login
 
-```powershell
+```bash
 az login
 az account show
 az account set --subscription "<subscription-id-or-name>"
@@ -411,10 +408,10 @@ Minimum resources:
 
 Set local environment variables:
 
-```powershell
-$env:FOUNDRY_PROJECT_ENDPOINT = "https://<your-foundry-project-endpoint>"
-$env:DEFAULT_ARCHITECTURE_MODEL = "<your-model-deployment-name>"
-$env:AZURE_OPENAI_ENDPOINT = "https://<your-azure-openai-resource>.openai.azure.com/"
+```bash
+export FOUNDRY_PROJECT_ENDPOINT="https://<your-foundry-project-endpoint>"
+export DEFAULT_ARCHITECTURE_MODEL="<your-model-deployment-name>"
+export AZURE_OPENAI_ENDPOINT="https://<your-azure-openai-resource>.openai.azure.com/"
 ```
 
 The current lightweight Foundry client uses:
@@ -426,7 +423,7 @@ DEFAULT_ARCHITECTURE_MODEL
 
 It imports `azure.identity.DefaultAzureCredential`, so install Azure identity support before using that path:
 
-```powershell
+```bash
 pip install azure-identity
 ```
 
@@ -434,25 +431,25 @@ pip install azure-identity
 
 Mock mode:
 
-```powershell
-$env:USE_MOCK_KB = "true"
+```bash
+export USE_MOCK_KB=true
 ```
 
 Real retrieval mode:
 
-```powershell
-$env:USE_MOCK_KB = "false"
-$env:ARCH_SEARCH_ENDPOINT = "https://<search-service>.search.windows.net"
-$env:ARCH_SEARCH_API_KEY = "<search-api-key>"
-$env:ARCH_KB_INDEX = "archimedes-arch-idx"
-$env:ARCH_KB_NAME = "azure-architecture-kb"
-$env:ARCH_KB_VERSION = "v1"
+```bash
+export USE_MOCK_KB=false
+export ARCH_SEARCH_ENDPOINT="https://<search-service>.search.windows.net"
+export ARCH_SEARCH_API_KEY="<search-api-key>"
+export ARCH_KB_INDEX=archimedes-arch-idx
+export ARCH_KB_NAME=azure-architecture-kb
+export ARCH_KB_VERSION=v1
 ```
 
 Alternative endpoint variable:
 
-```powershell
-$env:ARCH_SEARCH_SERVICE_NAME = "<search-service-name>"
+```bash
+export ARCH_SEARCH_SERVICE_NAME="<search-service-name>"
 ```
 
 Use either `ARCH_SEARCH_ENDPOINT` or `ARCH_SEARCH_SERVICE_NAME`.
@@ -479,42 +476,48 @@ Since Docker is unavailable locally, use an Azure-side source build or remote bu
 
 ### 8.1 Prepare Azure CLI
 
-```powershell
+```bash
 az login
 az extension add --name containerapp --upgrade
 az provider register --namespace Microsoft.App
 az provider register --namespace Microsoft.OperationalInsights
 ```
 
-### 8.2 Create Container Apps Environment
+### 8.2 Use Existing Container Apps Environment
 
-```powershell
-$rg = "rg-archimedes-dev"
-$loc = "eastus"
-$envName = "cae-archimedes-dev"
+```bash
+rg="arch-dev-rg-eus"
+loc="eastus"
+envName="arch-dev-acaenv-eus"
+cosmos="arch-dev-cosmos-eus-06102215"
+db="archimedes"
 
-az group create --name $rg --location $loc
+cosmosEndpoint=$(az cosmosdb show \
+  --name "$cosmos" \
+  --resource-group "$rg" \
+  --query documentEndpoint \
+  --output tsv
+)
 
-az containerapp env create `
-  --name $envName `
-  --resource-group $rg `
-  --location $loc
+az containerapp env show \
+  --name "$envName" \
+  --resource-group "$rg"
 ```
 
 ### 8.3 Deploy FastAPI Without Local Docker
 
 Preferred no-Docker path:
 
-```powershell
-$appName = "archimedes-api-dev"
+```bash
+appName="archimedes-api-dev"
 
-az containerapp up `
-  --name $appName `
-  --resource-group $rg `
-  --location $loc `
-  --environment $envName `
-  --source . `
-  --ingress external `
+az containerapp up \
+  --name "$appName" \
+  --resource-group "$rg" \
+  --location "$loc" \
+  --environment "$envName" \
+  --source . \
+  --ingress external \
   --target-port 8000
 ```
 
@@ -526,89 +529,90 @@ python -m uvicorn api.main:app --app-dir src --host 0.0.0.0 --port 8000
 
 Set app environment variables:
 
-```powershell
-az containerapp update `
-  --name $appName `
-  --resource-group $rg `
-  --set-env-vars `
-    ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false `
-    USE_MOCK_KB=true `
-    ARCHIMEDES_API_STORAGE_BACKEND=cosmos `
-    ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint" `
+```bash
+az containerapp update \
+  --name "$appName" \
+  --resource-group "$rg" \
+  --set-env-vars \
+    ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false \
+    USE_MOCK_KB=true \
+    ARCHIMEDES_API_STORAGE_BACKEND=cosmos \
+    ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint" \
     ARCHIMEDES_API_COSMOS_DATABASE_NAME="archimedes"
 ```
 
 If using Cosmos key auth, store it as a secret:
 
-```powershell
-az containerapp secret set `
-  --name $appName `
-  --resource-group $rg `
+```bash
+az containerapp secret set \
+  --name "$appName" \
+  --resource-group "$rg" \
   --secrets cosmos-key="$cosmosKey"
 
-az containerapp update `
-  --name $appName `
-  --resource-group $rg `
+az containerapp update \
+  --name "$appName" \
+  --resource-group "$rg" \
   --set-env-vars ARCHIMEDES_API_COSMOS_KEY=secretref:cosmos-key
 ```
 
 For Azure-backed mode, set real values instead:
 
-```powershell
-az containerapp update `
-  --name $appName `
-  --resource-group $rg `
-  --set-env-vars `
-    ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=true `
-    USE_MOCK_KB=false `
-    ARCHIMEDES_API_STORAGE_BACKEND=cosmos `
-    ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint" `
-    ARCHIMEDES_API_COSMOS_DATABASE_NAME="archimedes" `
-    FOUNDRY_PROJECT_ENDPOINT="https://<foundry-project-endpoint>" `
-    DEFAULT_ARCHITECTURE_MODEL="<model-deployment>" `
-    ARCH_SEARCH_ENDPOINT="https://<search-service>.search.windows.net" `
+```bash
+az containerapp update \
+  --name "$appName" \
+  --resource-group "$rg" \
+  --set-env-vars \
+    ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=true \
+    USE_MOCK_KB=false \
+    ARCHIMEDES_API_STORAGE_BACKEND=cosmos \
+    ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint" \
+    ARCHIMEDES_API_COSMOS_DATABASE_NAME="archimedes" \
+    FOUNDRY_PROJECT_ENDPOINT="https://<foundry-project-endpoint>" \
+    DEFAULT_ARCHITECTURE_MODEL="<model-deployment>" \
+    ARCH_SEARCH_ENDPOINT="https://<search-service>.search.windows.net" \
     ARCH_KB_INDEX="archimedes-arch-idx"
 ```
 
 Use Container Apps secrets for keys:
 
-```powershell
-az containerapp secret set `
-  --name $appName `
-  --resource-group $rg `
+```bash
+az containerapp secret set \
+  --name "$appName" \
+  --resource-group "$rg" \
   --secrets arch-search-api-key="<search-api-key>"
 
-az containerapp update `
-  --name $appName `
-  --resource-group $rg `
+az containerapp update \
+  --name "$appName" \
+  --resource-group "$rg" \
   --set-env-vars ARCH_SEARCH_API_KEY=secretref:arch-search-api-key
 ```
 
 Get the hosted API URL:
 
-```powershell
-$apiFqdn = az containerapp show `
-  --name $appName `
-  --resource-group $rg `
-  --query properties.configuration.ingress.fqdn `
+```bash
+apiFqdn=$(az containerapp show \
+  --name "$appName" \
+  --resource-group "$rg" \
+  --query properties.configuration.ingress.fqdn \
   --output tsv
+)
 
-"https://$apiFqdn/api/v1"
+echo "https://${apiFqdn}/api/v1"
 ```
 
 Validate:
 
-```powershell
-Invoke-RestMethod "https://$apiFqdn/health"
-Invoke-RestMethod "https://$apiFqdn/api/v1/health"
+```bash
+curl "https://${apiFqdn}/health"
+curl "https://${apiFqdn}/api/v1/health"
 ```
 
 ### 8.4 Point Local Streamlit at Hosted FastAPI
 
-```powershell
-cd D:\Work\Challenges\Microsoft-Agents-League\src\archemedes
-.\.venv\Scripts\Activate.ps1
-$env:ARCHIMEDES_API_URL = "https://$apiFqdn/api/v1"
+```bash
+cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
+source .venv/Scripts/activate
+export ARCHIMEDES_API_URL="https://${apiFqdn}/api/v1"
 streamlit run frontend/app.py --server.port 8501
 ```
 
@@ -652,23 +656,23 @@ ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 
 Option 1: Keep Streamlit local for the demo:
 
-```powershell
-$env:ARCHIMEDES_API_URL = "https://$apiFqdn/api/v1"
+```bash
+export ARCHIMEDES_API_URL="https://${apiFqdn}/api/v1"
 streamlit run frontend/app.py --server.port 8501
 ```
 
 Option 2: Deploy Streamlit separately to Container Apps without local Docker:
 
-```powershell
-$uiAppName = "archimedes-ui-dev"
+```bash
+uiAppName="archimedes-ui-dev"
 
-az containerapp up `
-  --name $uiAppName `
-  --resource-group $rg `
-  --location $loc `
-  --environment $envName `
-  --source . `
-  --ingress external `
+az containerapp up \
+  --name "$uiAppName" \
+  --resource-group "$rg" \
+  --location "$loc" \
+  --environment "$envName" \
+  --source . \
+  --ingress external \
   --target-port 8501
 ```
 
@@ -680,33 +684,34 @@ streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
 
 Set frontend env:
 
-```powershell
-az containerapp update `
-  --name $uiAppName `
-  --resource-group $rg `
-  --set-env-vars ARCHIMEDES_API_URL="https://$apiFqdn/api/v1"
+```bash
+az containerapp update \
+  --name "$uiAppName" \
+  --resource-group "$rg" \
+  --set-env-vars ARCHIMEDES_API_URL="https://${apiFqdn}/api/v1"
 ```
 
 Get frontend URL:
 
-```powershell
-$uiFqdn = az containerapp show `
-  --name $uiAppName `
-  --resource-group $rg `
-  --query properties.configuration.ingress.fqdn `
+```bash
+uiFqdn=$(az containerapp show \
+  --name "$uiAppName" \
+  --resource-group "$rg" \
+  --query properties.configuration.ingress.fqdn \
   --output tsv
+)
 
-"https://$uiFqdn"
+echo "https://${uiFqdn}"
 ```
 
 ### 9.3 Demo Checklist
 
 Before recording or presenting:
 
-```powershell
+```bash
 pytest
-Invoke-RestMethod "https://$apiFqdn/health"
-Invoke-RestMethod "https://$apiFqdn/api/v1/health/ready"
+curl "https://${apiFqdn}/health"
+curl "https://${apiFqdn}/api/v1/health/ready"
 ```
 
 In the UI:
@@ -784,24 +789,24 @@ GET  /api/v1/sessions/{session_id}/diffs/{diff_id}
 
 For local mock mode:
 
-```powershell
-$env:ARCHIMEDES_API_VALIDATE_REQUIRED_ENV = "false"
+```bash
+export ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
 ```
 
 For Azure-backed mode:
 
-```powershell
-$env:FOUNDRY_PROJECT_ENDPOINT = "https://<your-foundry-project-endpoint>"
+```bash
+export FOUNDRY_PROJECT_ENDPOINT="https://<your-foundry-project-endpoint>"
 ```
 
 ### FastAPI fails while connecting to Cosmos
 
 Check required settings:
 
-```powershell
-$env:ARCHIMEDES_API_STORAGE_BACKEND
-$env:ARCHIMEDES_API_COSMOS_ENDPOINT
-$env:ARCHIMEDES_API_COSMOS_DATABASE_NAME
+```bash
+echo "$ARCHIMEDES_API_STORAGE_BACKEND"
+echo "$ARCHIMEDES_API_COSMOS_ENDPOINT"
+echo "$ARCHIMEDES_API_COSMOS_DATABASE_NAME"
 ```
 
 Expected:
@@ -814,13 +819,13 @@ ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 
 If RBAC / `DefaultAzureCredential` is not ready, use key auth:
 
-```powershell
-$env:ARCHIMEDES_API_COSMOS_KEY = $cosmosKey
+```bash
+export ARCHIMEDES_API_COSMOS_KEY="$cosmosKey"
 ```
 
 If the SDK is missing:
 
-```powershell
+```bash
 pip install azure-cosmos azure-identity
 ```
 
@@ -828,15 +833,15 @@ pip install azure-cosmos azure-identity
 
 Check:
 
-```powershell
-$env:ARCHIMEDES_API_URL
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/health
+```bash
+echo "$ARCHIMEDES_API_URL"
+curl http://127.0.0.1:8000/api/v1/health
 ```
 
 Set:
 
-```powershell
-$env:ARCHIMEDES_API_URL = "http://127.0.0.1:8000/api/v1"
+```bash
+export ARCHIMEDES_API_URL=http://127.0.0.1:8000/api/v1
 ```
 
 ### Pattern detection fails
@@ -851,16 +856,16 @@ real-time stream event latency tps fraud pattern detection
 
 Find processes:
 
-```powershell
-Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue
-Get-NetTCPConnection -LocalPort 8501 -ErrorAction SilentlyContinue
+```bash
+netstat -ano | grep ':8000'
+netstat -ano | grep ':8501'
 ```
 
 Use another port:
 
-```powershell
+```bash
 python -m uvicorn api.main:app --app-dir src --reload --port 8010
-$env:ARCHIMEDES_API_URL = "http://127.0.0.1:8010/api/v1"
+export ARCHIMEDES_API_URL=http://127.0.0.1:8010/api/v1
 streamlit run frontend/app.py --server.port 8502
 ```
 
@@ -868,18 +873,18 @@ streamlit run frontend/app.py --server.port 8502
 
 Check:
 
-```powershell
-$env:USE_MOCK_KB
-$env:ARCH_SEARCH_ENDPOINT
-$env:ARCH_SEARCH_SERVICE_NAME
-$env:ARCH_SEARCH_API_KEY
-$env:ARCH_KB_INDEX
+```bash
+echo "$USE_MOCK_KB"
+echo "$ARCH_SEARCH_ENDPOINT"
+echo "$ARCH_SEARCH_SERVICE_NAME"
+echo "$ARCH_SEARCH_API_KEY"
+echo "$ARCH_KB_INDEX"
 ```
 
 Fallback:
 
-```powershell
-$env:USE_MOCK_KB = "true"
+```bash
+export USE_MOCK_KB=true
 ```
 
 ### Container Apps source deployment fails
@@ -894,10 +899,10 @@ Use this checklist:
    `python -m uvicorn api.main:app --app-dir src --host 0.0.0.0 --port 8000`
 5. Check logs:
 
-```powershell
-az containerapp logs show `
-  --name $appName `
-  --resource-group $rg `
+```bash
+az containerapp logs show \
+  --name "$appName" \
+  --resource-group "$rg" \
   --follow
 ```
 
@@ -905,10 +910,13 @@ az containerapp logs show `
 
 Stop local processes with `Ctrl+C` in each terminal.
 
-Delete hosted dev resources when no longer needed:
+Do not delete `arch-dev-rg-eus`; it contains the shared resources provisioned in P0-T06b.
 
-```powershell
-az group delete --name rg-archimedes-dev --yes --no-wait
+To remove only the hosted app instances created during this runbook:
+
+```bash
+az containerapp delete --name "$appName" --resource-group "$rg" --yes
+az containerapp delete --name "$uiAppName" --resource-group "$rg" --yes
 ```
 
 ## 13. Acceptance Criteria By Phase
