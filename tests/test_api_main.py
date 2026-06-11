@@ -147,7 +147,8 @@ def test_claims_endpoint_returns_claims_created_by_message_flow():
     assert claims_response.status_code == 200
     assert len(claims_response.json()["items"]) == 1
     assert evidence_response.status_code == 200
-    assert evidence_response.json() == {"items": []}
+    assert len(evidence_response.json()["items"]) == 1
+    assert evidence_response.json()["items"][0]["retrieved_via"] == "user_input"
 
 
 def test_artifact_version_and_diff_endpoints():

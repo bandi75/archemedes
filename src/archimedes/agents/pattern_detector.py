@@ -4,8 +4,16 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from archimedes.models.enums import ClaimType, QualityGateStatus, StageName
+from archimedes.models.enums import (
+    ClaimType,
+    EvidenceRetrievalMethod,
+    QualityGateStatus,
+    SourceFreshness,
+    StageName,
+    TrustLevel,
+)
 from archimedes.models.claims import ClaimRecord
+from archimedes.models.evidence import EvidenceSource
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
 
@@ -132,6 +140,15 @@ class PatternDetector:
             }
 
         patch_hash = self._compute_hash(patch_payload)
+        evidence = EvidenceSource(
+            session_id=session_id,
+            source="Archimedes deterministic pattern detector",
+            retrieved_via=EvidenceRetrievalMethod.FUNCTION_TOOL,
+            excerpt="Keyword-based pattern scoring over the current requirements text.",
+            source_freshness=SourceFreshness.CURRENT,
+            trust_level=TrustLevel.MEDIUM,
+            used_in_stages=[StageName.PATTERN_DETECTION.value],
+        )
         claim = ClaimRecord(
             session_id=session_id,
             claim=(
@@ -141,7 +158,7 @@ class PatternDetector:
             type=ClaimType.RECOMMENDATION,
             confidence=0.78,
             stage=StageName.PATTERN_DETECTION,
-            evidence_ids=[],
+            evidence_ids=[evidence.evidence_id],
         )
         idempotency_key = hashlib.sha256(
             f"{session_id}:{StageName.PATTERN_DETECTION.value}:{stage_run_id}:{patch_hash}".encode("utf-8")
@@ -157,7 +174,7 @@ class PatternDetector:
             patch_hash=patch_hash,
             patch=patch_payload,
             claims=[claim],
-            evidence_sources=[],
+            evidence_sources=[evidence],
             quality_gate_result=gate,
         )
 

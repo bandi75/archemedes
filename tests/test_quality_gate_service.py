@@ -16,6 +16,8 @@ from archimedes.state.quality_gates import GATE_DEFINITIONS, evaluate_quality_ga
         StageName.ADR_GENERATION,
         StageName.HLD_GENERATION,
         StageName.MINI_WAF_REVIEW,
+        StageName.EVIDENCE_AUDIT_CHECKPOINT,
+        StageName.FINAL_EVIDENCE_AUDIT,
     ],
 )
 def test_evaluate_quality_gate_passed_for_all_stages(stage: StageName):

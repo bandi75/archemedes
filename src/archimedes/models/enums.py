@@ -67,6 +67,13 @@ class TrustLevel(str, Enum):
     LOW = "low"
 
 
+class Severity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
 class ChangeType(str, Enum):
     REQUIREMENT_ADDED = "requirement_added"
     REQUIREMENT_MODIFIED = "requirement_modified"
@@ -102,3 +109,15 @@ class PersonaName(str, Enum):
     CUSTOMER_BIZ_SPONSOR = "customer_biz_sponsor"
     DATA_ARCHITECT = "data_architect"
     SYNTHESIZER = "synthesizer"
+
+
+class EvidenceAuditRecommendation(str, Enum):
+    PROCEED = "proceed"
+    REVIEW_FLAGGED_ITEMS = "review_flagged_items"
+    PAUSE_AND_VALIDATE = "pause_and_validate"
+
+
+class EvidenceQuality(str, Enum):
+    STRONG = "strong"
+    ADEQUATE = "adequate"
+    WEAK = "weak"

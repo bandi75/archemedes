@@ -130,6 +130,22 @@ GATE_DEFINITIONS: dict[str, GateSpec] = {
             ("mitigations_present", "Mitigations are missing."),
         ],
     },
+    StageName.EVIDENCE_AUDIT_CHECKPOINT.value: {
+        "blocking": [
+            ("no_blocking_evidence_failures", "Evidence audit must not have blocking failures."),
+        ],
+        "warning": [
+            ("no_evidence_warnings", "Evidence audit has warnings to review."),
+        ],
+    },
+    StageName.FINAL_EVIDENCE_AUDIT.value: {
+        "blocking": [
+            ("no_blocking_evidence_failures", "Final evidence audit must not have blocking failures."),
+        ],
+        "warning": [
+            ("no_evidence_warnings", "Final evidence audit has warnings to review."),
+        ],
+    },
 }
 
 
@@ -146,6 +162,9 @@ STAGE_ALIASES = {
     "hld_generation": StageName.HLD_GENERATION.value,
     "waf_review": StageName.MINI_WAF_REVIEW.value,
     "mini_waf_review": StageName.MINI_WAF_REVIEW.value,
+    "evidence_audit_checkpoint": StageName.EVIDENCE_AUDIT_CHECKPOINT.value,
+    "post_socrates_evidence_audit": StageName.EVIDENCE_AUDIT_CHECKPOINT.value,
+    "final_evidence_audit": StageName.FINAL_EVIDENCE_AUDIT.value,
 }
 
 

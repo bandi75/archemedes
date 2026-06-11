@@ -16,14 +16,18 @@ from .change import ChangeEvent, DependencyImpactResult
 from .diffs import ArtifactDiff, FieldDiff
 from .enums import (
 	DiffType,
+	EvidenceAuditRecommendation,
+	EvidenceQuality,
 	PersonaName,
 	QualityGateStatus,
+	Severity,
 	SocratesDepth,
 	SourceFreshness,
 	StageName,
 	StageStatus,
 )
 from .evidence import EvidenceSource
+from .evidence_audit import EvidenceAuditFinding, EvidenceAuditReport
 from .patches import ApplyPatchResult, StagePatch
 from .quality_gates import QualityGateCheck, QualityGateResult
 from .session import ArchitectureSession, DEPENDENCY_RULES, DependencyMap, StageExecution
@@ -56,6 +60,11 @@ __all__ = [
 	"ClaimRecord",
 	"EvidenceSource",
 	"SourceFreshness",
+	"Severity",
+	"EvidenceAuditRecommendation",
+	"EvidenceQuality",
+	"EvidenceAuditFinding",
+	"EvidenceAuditReport",
 	"DiffType",
 	"ChangeEvent",
 	"DependencyImpactResult",

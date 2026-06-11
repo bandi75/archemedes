@@ -9,10 +9,20 @@ from typing import Protocol
 from pydantic import Field
 
 from archimedes.agents.pattern_detector import PatternDetector
+from archimedes.agents.evidence_auditor import EvidenceAuditor
 from archimedes.models.base import ArchimedesModel, new_id
 from archimedes.models.change import ChangeEvent
 from archimedes.models.claims import ClaimRecord
-from archimedes.models.enums import ChangeType, ClaimType, QualityGateStatus, StageName
+from archimedes.models.enums import (
+    ChangeType,
+    ClaimType,
+    EvidenceRetrievalMethod,
+    QualityGateStatus,
+    SourceFreshness,
+    StageName,
+    TrustLevel,
+)
+from archimedes.models.evidence import EvidenceSource
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
 from archimedes.models.session import ArchitectureSession
@@ -58,6 +68,7 @@ class StageController:
     state_manager: ArchitectureStateManager
     storage: SupportsControllerStorage
     pattern_detector: PatternDetector = field(default_factory=PatternDetector)
+    evidence_auditor: EvidenceAuditor = field(default_factory=EvidenceAuditor)
 
     def process_message(
         self,
@@ -115,16 +126,24 @@ class StageController:
                 requires_user_action=True,
             )
 
+        produced = [f"{self._stage_value(stage)}:v{apply_result.version}"]
         next_stage = self._next_stage(stage)
-        session.current_stage = next_stage or stage
-        session.last_successful_stage = stage
+        audit_stage = self._audit_stage_after(stage)
+        if audit_stage is not None:
+            audit_result = self._run_evidence_audit(session, audit_stage)
+            if audit_result.applied:
+                produced.append(f"{self._stage_value(audit_stage)}:v{audit_result.version}")
+                next_stage = self._next_stage(audit_stage)
+
+        session.current_stage = next_stage or audit_stage or stage
+        session.last_successful_stage = audit_stage or stage
         self.storage.upsert_session(session)
 
         gate = session.quality_gates.get(stage)
         return OrchestratorResponse(
             current_stage=stage,
             stage_status="completed",
-            artifacts_produced=[f"{self._stage_value(stage)}:v{apply_result.version}"],
+            artifacts_produced=produced,
             quality_gate_result=gate,
             next_prompt_for_user=(
                 "Pipeline complete."
@@ -161,6 +180,20 @@ class StageController:
             patch.idempotency_key = idempotency_key
         return self.state_manager.apply_patch(patch)
 
+    def _run_evidence_audit(self, session: ArchitectureSession, stage: StageName):
+        base_version = session.latest_artifact_versions.get(stage, 0)
+        report = self.evidence_auditor.run(
+            session_id=session.session_id,
+            storage=self.storage,
+            stage=stage,
+        )
+        patch = self.evidence_auditor.build_stage_patch(
+            report,
+            stage_run_id=new_id("stage_run"),
+            base_version=base_version,
+        )
+        return self.state_manager.apply_patch(patch)
+
     def _generic_stage_patch(
         self,
         *,
@@ -175,13 +208,22 @@ class StageController:
             "status": "generated",
         }
         patch_hash = self._compute_hash(payload)
+        evidence = EvidenceSource(
+            session_id=session.session_id,
+            source="User-provided architecture context",
+            retrieved_via=EvidenceRetrievalMethod.USER_INPUT,
+            excerpt=user_message.strip(),
+            source_freshness=SourceFreshness.CURRENT,
+            trust_level=TrustLevel.MEDIUM,
+            used_in_stages=[self._stage_value(stage)],
+        )
         claim = ClaimRecord(
             session_id=session.session_id,
             claim=f"{stage} artifact generated from user context.",
             type=ClaimType.ASSUMPTION,
             confidence=0.65,
             stage=stage,
-            evidence_ids=[],
+            evidence_ids=[evidence.evidence_id],
         )
         gate = QualityGateResult(status=QualityGateStatus.PASSED)
         idem = hashlib.sha256(
@@ -198,7 +240,7 @@ class StageController:
             patch_hash=patch_hash,
             patch=payload,
             claims=[claim],
-            evidence_sources=[],
+            evidence_sources=[evidence],
             quality_gate_result=gate,
         )
 
@@ -215,6 +257,14 @@ class StageController:
         if idx == len(PIPELINE_ORDER) - 1:
             return None
         return PIPELINE_ORDER[idx + 1]
+
+    @staticmethod
+    def _audit_stage_after(stage: StageName) -> StageName | None:
+        if stage == StageName.SOCRATIC_REVIEW:
+            return StageName.EVIDENCE_AUDIT_CHECKPOINT
+        if stage == StageName.MINI_WAF_REVIEW:
+            return StageName.FINAL_EVIDENCE_AUDIT
+        return None
 
     @staticmethod
     def _compute_hash(payload: dict) -> str:
