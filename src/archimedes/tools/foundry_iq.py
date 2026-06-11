@@ -8,6 +8,10 @@ import httpx
 from archimedes.models.evidence import EvidenceSource
 
 
+def _use_mock_kb() -> bool:
+    return os.getenv("USE_MOCK_KB", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _search_endpoint() -> str:
     endpoint = os.getenv("ARCH_SEARCH_ENDPOINT")
     if endpoint:
@@ -89,4 +93,45 @@ def parse_kb_response_to_evidence_source(raw_response: dict[str, Any], session_i
         chunk_id=raw_response.get("chunk_id"),
         kb_name=raw_response.get("kb_name"),
         kb_version=raw_response.get("kb_version"),
+    )
+
+
+class FoundryIQRetriever:
+    """Adapter layer for knowledge retrieval with optional mock fallback."""
+
+    def __init__(self, default_session_id: str = "session_runtime"):
+        self.default_session_id = default_session_id
+
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        session_id: str | None = None,
+    ) -> list[EvidenceSource]:
+        resolved_session_id = session_id or self.default_session_id
+
+        if _use_mock_kb():
+            from .mock_foundry_iq import MockFoundryIQAdapter
+
+            return MockFoundryIQAdapter().retrieve(
+                query=query,
+                top_k=top_k,
+                session_id=resolved_session_id,
+            )
+
+        raw_items = knowledge_base_retrieve(query=query, top_k=top_k)
+        return [
+            parse_kb_response_to_evidence_source(raw_item, session_id=resolved_session_id)
+            for raw_item in raw_items
+        ]
+
+
+def retrieve_evidence(query: str, top_k: int = 5, session_id: str = "session_runtime") -> list[EvidenceSource]:
+    """Convenience function used by specialist routines for retrieval."""
+
+    return FoundryIQRetriever(default_session_id=session_id).retrieve(
+        query=query,
+        top_k=top_k,
+        session_id=session_id,
     )
