@@ -189,6 +189,57 @@ def test_artifact_version_and_diff_endpoints():
     assert "summary" in diff_response.json()["modified"]
 
 
+def test_change_preview_message_rereasoning_and_structured_diff_endpoints():
+    app = _test_app()
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/v1/sessions",
+            json={"business_need": "Build a real-time fraud detection platform"},
+        )
+        session_id = create_response.json()["session_id"]
+        for message in [
+            "Generate intake",
+            "Extract requirements for 10K TPS fraud detection",
+            "real-time stream event latency tps fraud pattern",
+            "Generate architecture options",
+        ]:
+            client.post(
+                f"/api/v1/sessions/{session_id}/messages",
+                json={"message": message},
+            )
+
+        preview_response = client.post(
+            f"/api/v1/sessions/{session_id}/changes/preview-impact",
+            json={"user_message": "Actually make it 100K TPS and multi-region active-active"},
+        )
+        change_response = client.post(
+            f"/api/v1/sessions/{session_id}/messages",
+            json={"message": "Actually make it 100K TPS and multi-region active-active"},
+        )
+        event = app.state.storage.list_change_events(session_id)[-1]
+        diff_response = client.post(
+            f"/api/v1/sessions/{session_id}/diffs",
+            json={
+                "stage": "options_generation",
+                "before_version": 1,
+                "after_version": 2,
+                "change_event_id": event.change_event_id,
+            },
+        )
+        list_response = client.get(
+            f"/api/v1/sessions/{session_id}/diffs?stage=options_generation"
+        )
+
+    assert preview_response.status_code == 200
+    assert "options_generation" in preview_response.json()["impacted_stages"]
+    assert change_response.status_code == 200
+    assert change_response.json()["stage_status"] == "rereasoned"
+    assert "options_generation:v2" in change_response.json()["artifacts_produced"]
+    assert diff_response.status_code == 200
+    assert diff_response.json()["change_event_id"] == event.change_event_id
+    assert list_response.json()["items"][0]["diff_id"] == diff_response.json()["diff_id"]
+
+
 def test_unknown_session_returns_structured_not_found():
     with TestClient(_test_app()) as client:
         response = client.get("/api/v1/sessions/missing")

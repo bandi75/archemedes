@@ -6,6 +6,7 @@ from typing import Any
 from archimedes.models.artifacts import VersionedArtifact
 from archimedes.models.change import ChangeEvent
 from archimedes.models.claims import ClaimRecord
+from archimedes.models.diffs import ArtifactDiff
 from archimedes.models.evidence import EvidenceSource
 from archimedes.models.session import ArchitectureSession
 
@@ -23,6 +24,7 @@ class InMemoryArchimedesStorage:
     claims: dict[str, ClaimRecord] = field(default_factory=dict)
     evidence: dict[str, EvidenceSource] = field(default_factory=dict)
     change_events: list[ChangeEvent] = field(default_factory=list)
+    diffs: dict[str, ArtifactDiff] = field(default_factory=dict)
     idempotency: dict[tuple[str, str], dict[str, Any]] = field(default_factory=dict)
 
     def read_session(self, session_id: str) -> ArchitectureSession | None:
@@ -84,6 +86,36 @@ class InMemoryArchimedesStorage:
     def append_change_event(self, event: ChangeEvent) -> ChangeEvent:
         self.change_events.append(event)
         return event
+
+    def read_change_event(self, session_id: str, change_event_id: str) -> ChangeEvent | None:
+        for event in self.change_events:
+            if event.session_id == session_id and event.change_event_id == change_event_id:
+                return event
+        return None
+
+    def list_change_events(self, session_id: str) -> list[ChangeEvent]:
+        return [event for event in self.change_events if event.session_id == session_id]
+
+    def upsert_diff(self, diff: ArtifactDiff) -> ArtifactDiff:
+        self.diffs[diff.diff_id] = diff
+        return diff
+
+    def read_diff(self, session_id: str, diff_id: str) -> ArtifactDiff | None:
+        diff = self.diffs.get(diff_id)
+        if diff is None or diff.session_id != session_id:
+            return None
+        return diff
+
+    def list_diffs(
+        self,
+        session_id: str,
+        *,
+        stage: str | None = None,
+    ) -> list[ArtifactDiff]:
+        items = [diff for diff in self.diffs.values() if diff.session_id == session_id]
+        if stage is not None:
+            items = [diff for diff in items if _value(diff.stage) == _value(stage)]
+        return items
 
     def list_claims(
         self,

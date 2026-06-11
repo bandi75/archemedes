@@ -20,13 +20,26 @@ class FakeStorage:
         return None
 
     def read_latest_artifact(self, session_id: str, stage: str):
-        return self.artifacts.get((session_id, stage))
+        stage_value = stage.value if hasattr(stage, "value") else str(stage)
+        matches = [
+            artifact
+            for (artifact_session_id, artifact_stage, _), artifact in self.artifacts.items()
+            if artifact_session_id == session_id and artifact_stage == stage_value
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda artifact: artifact.version)
+
+    def read_artifact_version(self, session_id: str, stage: str, version: int):
+        stage_value = stage.value if hasattr(stage, "value") else str(stage)
+        return self.artifacts.get((session_id, stage_value, version))
 
     def find_by_idempotency_key(self, session_id: str, key: str):
         return self.idempotency.get((session_id, key))
 
     def upsert_artifact(self, artifact, *, idempotency_key=None, patch_id=None):
-        self.artifacts[(artifact.session_id, artifact.stage)] = artifact
+        stage_value = artifact.stage.value if hasattr(artifact.stage, "value") else str(artifact.stage)
+        self.artifacts[(artifact.session_id, stage_value, artifact.version)] = artifact
         if idempotency_key:
             self.idempotency[(artifact.session_id, idempotency_key)] = {
                 "idempotency_key": idempotency_key,
@@ -76,7 +89,10 @@ def test_stage_controller_applies_current_stage_and_advances():
 
 
 def test_stage_controller_detects_requirement_change():
-    session = ArchitectureSession(business_need="Build fraud detection assistant")
+    session = ArchitectureSession(
+        business_need="Build fraud detection assistant",
+        current_stage="hld_generation",
+    )
     storage = FakeStorage(session)
     manager = ArchitectureStateManager(storage=storage)
     controller = StageController(state_manager=manager, storage=storage)
@@ -84,9 +100,12 @@ def test_stage_controller_detects_requirement_change():
     response = controller.process_message(session.session_id, "Actually make it 100K TPS and multi-region")
 
     assert response.change_detected is True
-    assert response.requires_user_action is True
+    assert response.stage_status == "rereasoned"
+    assert response.requires_user_action is False
     assert len(response.impacted_stages) > 0
-    assert len(storage.change_events) == 1
+    assert any("options_generation:v1" == artifact for artifact in response.artifacts_produced)
+    assert any("hld_generation:v1" == artifact for artifact in response.artifacts_produced)
+    assert len(storage.change_events) > 1
 
 
 def test_stage_controller_runs_evidence_checkpoint_after_socratic_review():

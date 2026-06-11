@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.state_manager import ArchitectureStateManager
 
-from .routers import artifacts, evidence, sessions
+from .routers import artifacts, changes, diffs, evidence, sessions
 from .storage import InMemoryArchimedesStorage
 
 
@@ -87,6 +87,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions.router, prefix="/api/v1")
     app.include_router(artifacts.router, prefix="/api/v1")
     app.include_router(evidence.router, prefix="/api/v1")
+    app.include_router(changes.router, prefix="/api/v1")
+    app.include_router(diffs.router, prefix="/api/v1")
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -26,6 +25,10 @@ from archimedes.models.evidence import EvidenceSource
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
 from archimedes.models.session import ArchitectureSession
+from archimedes.orchestrator.dependency_engine import (
+    compute_change_impact,
+    detect_requirement_changes,
+)
 from archimedes.state.state_manager import ArchitectureStateManager
 
 
@@ -81,29 +84,42 @@ class StageController:
         if session is None:
             raise ValueError(f"Session not found: {session_id}")
 
-        change = self._classify_requirement_change(user_message)
-        if change is not None:
+        changes = detect_requirement_changes(user_message)
+        if changes:
             event = ChangeEvent(
                 session_id=session_id,
                 change_type=ChangeType.REQUIREMENT_MODIFIED,
-                changed_field=change["field"],
+                changed_field=",".join(change.changed_field for change in changes),
                 old_value_summary="existing value",
-                new_value_summary=change["value"],
-                impacted_stages=self._impacted_stages(session, change["category"]),
-                stable_stages=self._stable_stages(session, change["category"]),
+                new_value_summary="; ".join(change.new_value for change in changes),
                 user_message=user_message,
             )
+            impact = compute_change_impact(
+                changes,
+                session.dependency_map,
+                session_id=session_id,
+                change_event_id=event.change_event_id,
+            )
+            event.impacted_stages = impact.impacted_stages
+            event.stable_stages = impact.stable_stages
             self.storage.append_change_event(event)
 
+            artifacts_produced = self.rerun_impacted_stages(
+                session_id=session_id,
+                user_message=user_message,
+                impacted_stages=event.impacted_stages,
+                change_event_id=event.change_event_id,
+            )
+            refreshed = self.storage.read_session(session_id) or session
             return OrchestratorResponse(
-                current_stage=session.current_stage,
-                stage_status="change_detected",
-                artifacts_produced=[],
+                current_stage=refreshed.current_stage,
+                stage_status="rereasoned",
+                artifacts_produced=artifacts_produced,
                 next_prompt_for_user=(
-                    "Requirement change detected. Confirm re-run for impacted stages: "
+                    "Requirement change detected. Re-ran impacted stages: "
                     f"{', '.join(self._stage_value(stage) for stage in event.impacted_stages)}"
                 ),
-                requires_user_action=True,
+                requires_user_action=False,
                 change_detected=True,
                 impacted_stages=event.impacted_stages,
                 stable_stages=event.stable_stages,
@@ -152,6 +168,51 @@ class StageController:
             ),
             requires_user_action=next_stage is None,
         )
+
+    def rerun_impacted_stages(
+        self,
+        *,
+        session_id: str,
+        user_message: str,
+        impacted_stages: list[StageName],
+        change_event_id: str,
+    ) -> list[str]:
+        artifacts_produced: list[str] = []
+        ordered_stages = [
+            stage
+            for stage in PIPELINE_ORDER
+            if self._stage_value(stage)
+            in {self._stage_value(impacted_stage) for impacted_stage in impacted_stages}
+        ]
+
+        for stage in ordered_stages:
+            session = self.storage.read_session(session_id)
+            if session is None:
+                raise ValueError(f"Session not found: {session_id}")
+
+            if stage in {
+                StageName.EVIDENCE_AUDIT_CHECKPOINT,
+                StageName.FINAL_EVIDENCE_AUDIT,
+            }:
+                result = self._run_evidence_audit(session, stage)
+            else:
+                result = self._execute_stage(
+                    session,
+                    stage,
+                    self._rerun_message(user_message, stage, change_event_id),
+                )
+
+            if result.applied:
+                artifacts_produced.append(f"{self._stage_value(stage)}:v{result.version}")
+            else:
+                artifacts_produced.append(f"{self._stage_value(stage)}:failed:{result.reason}")
+
+        session = self.storage.read_session(session_id)
+        if session is not None and ordered_stages:
+            session.current_stage = ordered_stages[-1]
+            session.last_successful_stage = ordered_stages[-1]
+            self.storage.upsert_session(session)
+        return artifacts_produced
 
     def _execute_stage(
         self,
@@ -202,11 +263,7 @@ class StageController:
         base_version: int,
         user_message: str,
     ) -> StagePatch:
-        payload = {
-            "summary": user_message.strip(),
-            "stage": self._stage_value(stage),
-            "status": "generated",
-        }
+        payload = self._stage_payload(stage, user_message)
         patch_hash = self._compute_hash(payload)
         evidence = EvidenceSource(
             session_id=session.session_id,
@@ -271,37 +328,161 @@ class StageController:
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+    def _stage_payload(self, stage: StageName, user_message: str) -> dict:
+        stage_value = self._stage_value(stage)
+        text = user_message.strip()
+        scale = self._scale_target(text)
+        multi_region = self._is_multi_region(text)
+
+        if stage == StageName.OPTIONS_GENERATION:
+            options = [
+                {
+                    "option_id": "option_event_streaming",
+                    "name": "Event Hubs streaming fraud pipeline",
+                    "fit": "recommended",
+                    "capacity_target": scale,
+                    "topology": "multi-region active-active" if multi_region else "single-region resilient",
+                    "core_services": (
+                        ["Partitioned Event Hubs", "AKS", "Cosmos DB multi-region", "Front Door"]
+                        if multi_region or scale == "100K TPS"
+                        else ["Event Hubs", "Stream Analytics", "Azure Functions", "Cosmos DB"]
+                    ),
+                },
+                {
+                    "option_id": "option_serverless",
+                    "name": "Serverless event scoring",
+                    "fit": "conditional",
+                    "capacity_target": scale,
+                    "topology": "single-region",
+                    "core_services": ["Event Hubs", "Azure Functions", "Cosmos DB"],
+                },
+                {
+                    "option_id": "option_microservices",
+                    "name": "AKS microservices scoring platform",
+                    "fit": "strong at high scale" if scale == "100K TPS" else "higher operational overhead",
+                    "capacity_target": scale,
+                    "topology": "multi-region active-active" if multi_region else "regional",
+                    "core_services": ["AKS", "Event Hubs", "Redis", "Cosmos DB"],
+                },
+            ]
+            return {
+                "summary": text,
+                "stage": stage_value,
+                "status": "generated",
+                "options": options,
+                "cost_estimate": {
+                    "relative_monthly_cost": "high" if scale == "100K TPS" or multi_region else "medium",
+                    "main_cost_drivers": ["stream partitions", "compute replicas", "multi-region data writes"],
+                },
+            }
+
+        if stage == StageName.ADR_GENERATION:
+            return {
+                "summary": text,
+                "stage": stage_value,
+                "status": "generated",
+                "title": "ADR: Real-time fraud detection architecture",
+                "decision": (
+                    "Adopt partitioned Event Hubs with active-active regional scoring."
+                    if multi_region or scale == "100K TPS"
+                    else "Adopt Event Hubs with stream processing and serverless scoring."
+                ),
+                "context": {
+                    "scale_target": scale,
+                    "resiliency": "multi-region active-active" if multi_region else "99.95% regional resilience",
+                },
+                "consequences": (
+                    ["higher cost", "more operational complexity", "regional failover capability"]
+                    if multi_region or scale == "100K TPS"
+                    else ["lower complexity", "regional dependency", "simpler operations"]
+                ),
+            }
+
+        if stage == StageName.HLD_GENERATION:
+            components = [
+                {"name": "Event Hubs", "role": "transaction ingestion", "scale_target": scale},
+                {"name": "Scoring workers", "role": "real-time fraud inference"},
+                {"name": "Cosmos DB", "role": "feature and decision store"},
+            ]
+            if multi_region or scale == "100K TPS":
+                components.extend(
+                    [
+                        {"name": "Azure Front Door", "role": "global ingress and failover"},
+                        {"name": "AKS", "role": "horizontally scaled scoring runtime"},
+                        {"name": "Cosmos DB multi-region writes", "role": "active-active persistence"},
+                    ]
+                )
+            return {
+                "summary": text,
+                "stage": stage_value,
+                "status": "generated",
+                "title": "Fraud Detection HLD",
+                "components": components,
+                "data_flows": [
+                    {
+                        "from": "payment gateway",
+                        "to": "stream ingestion",
+                        "latency_target": "sub-second",
+                    },
+                    {
+                        "from": "scoring workers",
+                        "to": "decision API",
+                        "resiliency": "multi-region" if multi_region else "regional",
+                    },
+                ],
+            }
+
+        if stage == StageName.MINI_WAF_REVIEW:
+            findings = [
+                {
+                    "pillar": "Reliability",
+                    "severity": "warning" if multi_region or scale == "100K TPS" else "info",
+                    "finding": (
+                        "Active-active failover requires tested conflict handling."
+                        if multi_region
+                        else "Regional resiliency must be validated against 99.95% availability."
+                    ),
+                },
+                {
+                    "pillar": "Cost Optimization",
+                    "severity": "warning" if scale == "100K TPS" else "info",
+                    "finding": "High throughput increases partition and compute cost.",
+                },
+            ]
+            return {
+                "summary": text,
+                "stage": stage_value,
+                "status": "generated",
+                "findings": findings,
+            }
+
+        return {
+            "summary": text,
+            "stage": stage_value,
+            "status": "generated",
+        }
+
     @staticmethod
     def _stage_value(stage: StageName | str) -> str:
         return stage.value if isinstance(stage, StageName) else str(stage)
 
     @staticmethod
-    def _classify_requirement_change(user_message: str) -> dict[str, str] | None:
-        patterns = {
-            "scale": re.compile(r"\b(\d+k\s*tps|throughput|scale|qps|rps)\b", re.IGNORECASE),
-            "region": re.compile(r"\b(multi-region|active-active|geo|region)\b", re.IGNORECASE),
-            "compliance": re.compile(r"\b(hipaa|pci|gdpr|compliance)\b", re.IGNORECASE),
-            "budget": re.compile(r"\b(budget|cost|cheaper|price)\b", re.IGNORECASE),
-            "availability": re.compile(r"\b(sla|uptime|availability|dr)\b", re.IGNORECASE),
-        }
-        trigger = re.compile(r"\b(change|make it|add|remove|instead of|actually)\b", re.IGNORECASE)
-        if not trigger.search(user_message):
-            return None
-
-        for category, regex in patterns.items():
-            if regex.search(user_message):
-                return {
-                    "category": category,
-                    "field": category,
-                    "value": user_message.strip(),
-                }
-        return None
+    def _rerun_message(user_message: str, stage: StageName, change_event_id: str) -> str:
+        return (
+            f"{user_message.strip()} "
+            f"[re-reasoning stage={stage.value} change_event_id={change_event_id}]"
+        )
 
     @staticmethod
-    def _impacted_stages(session: ArchitectureSession, category: str) -> list[StageName]:
-        return session.dependency_map.get(category, [])
+    def _scale_target(user_message: str) -> str:
+        lowered = user_message.lower().replace(" ", "")
+        if "100ktps" in lowered or "100,000tps" in lowered:
+            return "100K TPS"
+        if "10ktps" in lowered or "10,000tps" in lowered:
+            return "10K TPS"
+        return "current target"
 
     @staticmethod
-    def _stable_stages(session: ArchitectureSession, category: str) -> list[StageName]:
-        impacted = set(session.dependency_map.get(category, []))
-        return [stage for stage in PIPELINE_ORDER if stage not in impacted]
+    def _is_multi_region(user_message: str) -> bool:
+        lowered = user_message.lower()
+        return "multi-region" in lowered or "multi region" in lowered or "active-active" in lowered

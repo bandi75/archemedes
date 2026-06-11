@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from archimedes.models.artifacts import VersionedArtifact
+from archimedes.models.enums import DiffType
 from archimedes.models.session import ArchitectureSession
+from archimedes.state.diff_service import ArtifactDiffService
 
 from api.deps import get_storage
 from api.errors import api_error
@@ -145,25 +147,23 @@ async def get_artifact_diff(
     if v2 <= v1:
         raise api_error(422, "v2 must be greater than v1", "validation_error")
 
-    before = _require_artifact(storage, session_id, stage, v1)
-    after = _require_artifact(storage, session_id, stage, v2)
-    before_content = before.content
-    after_content = after.content
-
+    _require_artifact(storage, session_id, stage, v1)
+    _require_artifact(storage, session_id, stage, v2)
+    diff = ArtifactDiffService(storage).generate_diff(session_id, stage, v1, v2)
     added = {
-        key: value
-        for key, value in after_content.items()
-        if key not in before_content
+        _top_level_path(field.field_path): field.after
+        for field in diff.field_diffs
+        if field.diff_type == DiffType.ADDED
     }
     removed = {
-        key: value
-        for key, value in before_content.items()
-        if key not in after_content
+        _top_level_path(field.field_path): field.before
+        for field in diff.field_diffs
+        if field.diff_type == DiffType.REMOVED
     }
     modified = {
-        key: {"before": before_content[key], "after": after_content[key]}
-        for key in before_content.keys() & after_content.keys()
-        if before_content[key] != after_content[key]
+        _top_level_path(field.field_path): {"before": field.before, "after": field.after}
+        for field in diff.field_diffs
+        if field.diff_type == DiffType.MODIFIED
     }
 
     return ArtifactDiffResponse(
@@ -171,11 +171,13 @@ async def get_artifact_diff(
         stage=stage,
         before_version=v1,
         after_version=v2,
-        summary=(
-            f"{len(added)} added, {len(removed)} removed, "
-            f"{len(modified)} modified fields."
-        ),
+        summary=diff.summary,
         added=added,
         removed=removed,
         modified=modified,
     )
+
+
+def _top_level_path(field_path: str) -> str:
+    trimmed = field_path[2:] if field_path.startswith("$.") else field_path
+    return trimmed.split(".", maxsplit=1)[0].split("[", maxsplit=1)[0]
