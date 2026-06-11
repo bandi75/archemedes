@@ -1,0 +1,127 @@
+{
+  "Event Hubs": {
+    "Standard": {
+      "eastus": {"price_usd": 0.03, "unit": "per hour"},
+      "global": {"price_usd": 0.03, "unit": "per hour"}
+    }
+  },
+  "Cosmos DB": {
+    "Serverless": {
+      "eastus": {"price_usd": 0.35, "unit": "per hour"},
+      "global": {"price_usd": 0.35, "unit": "per hour"}
+    },
+    "Provisioned": {
+      "eastus": {"price_usd": 0.5, "unit": "per hour"},
+      "global": {"price_usd": 0.5, "unit": "per hour"}
+    }
+  },
+  "Stream Analytics": {
+    "Standard": {
+      "eastus": {"price_usd": 0.11, "unit": "per hour"},
+      "global": {"price_usd": 0.11, "unit": "per hour"}
+    }
+  },
+  "Azure Functions": {
+    "Consumption": {
+      "global": {"price_usd": 0.02, "unit": "per hour"}
+    },
+    "Premium": {
+      "eastus": {"price_usd": 0.12, "unit": "per hour"},
+      "global": {"price_usd": 0.12, "unit": "per hour"}
+    }
+  },
+  "API Management": {
+    "Developer": {
+      "eastus": {"price_usd": 0.1, "unit": "per hour"},
+      "global": {"price_usd": 0.1, "unit": "per hour"}
+    },
+    "Standard": {
+      "eastus": {"price_usd": 0.4, "unit": "per hour"},
+      "global": {"price_usd": 0.4, "unit": "per hour"}
+    }
+  },
+  "App Service": {
+    "P1v3": {
+      "eastus": {"price_usd": 0.2, "unit": "per hour"},
+      "global": {"price_usd": 0.2, "unit": "per hour"}
+    }
+  },
+  "AKS": {
+    "Standard": {
+      "eastus": {"price_usd": 0.18, "unit": "per hour"},
+      "global": {"price_usd": 0.18, "unit": "per hour"}
+    }
+  },
+  "Service Bus": {
+    "Standard": {
+      "eastus": {"price_usd": 0.05, "unit": "per hour"},
+      "global": {"price_usd": 0.05, "unit": "per hour"}
+    }
+  },
+  "Event Grid": {
+    "Standard": {
+      "global": {"price_usd": 0.015, "unit": "per hour"}
+    }
+  },
+  "Container Apps": {
+    "Consumption": {
+      "eastus": {"price_usd": 0.09, "unit": "per hour"},
+      "global": {"price_usd": 0.09, "unit": "per hour"}
+    }
+  },
+  "Azure Cache for Redis": {
+    "C1": {
+      "eastus": {"price_usd": 0.06, "unit": "per hour"},
+      "global": {"price_usd": 0.06, "unit": "per hour"}
+    }
+  },
+  "Key Vault": {
+    "Standard": {
+      "global": {"price_usd": 0.01, "unit": "per hour"}
+    }
+  },
+  "Application Gateway": {
+    "WAF_v2": {
+      "eastus": {"price_usd": 0.25, "unit": "per hour"},
+      "global": {"price_usd": 0.25, "unit": "per hour"}
+    }
+  },
+  "Front Door": {
+    "Standard": {
+      "global": {"price_usd": 0.12, "unit": "per hour"}
+    }
+  },
+  "Storage": {
+    "HotLRS": {
+      "global": {"price_usd": 0.02, "unit": "per hour"}
+    }
+  },
+  "Virtual Machines": {
+    "D2s_v5": {
+      "eastus": {"price_usd": 0.14, "unit": "per hour"},
+      "global": {"price_usd": 0.14, "unit": "per hour"}
+    }
+  },
+  "Azure SQL": {
+    "GeneralPurpose": {
+      "eastus": {"price_usd": 0.3, "unit": "per hour"},
+      "global": {"price_usd": 0.3, "unit": "per hour"}
+    }
+  },
+  "Synapse": {
+    "DWU100": {
+      "eastus": {"price_usd": 0.22, "unit": "per hour"},
+      "global": {"price_usd": 0.22, "unit": "per hour"}
+    }
+  },
+  "Data Factory": {
+    "Orchestration": {
+      "global": {"price_usd": 0.04, "unit": "per hour"}
+    }
+  },
+  "Azure Monitor": {
+    "Logs": {
+      "global": {"price_usd": 0.08, "unit": "per hour"}
+    }
+  }
+}
