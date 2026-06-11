@@ -5,3 +5,5 @@ pydantic-settings
 httpx
 streamlit
 pytest
+azure-cosmos
+azure-identity

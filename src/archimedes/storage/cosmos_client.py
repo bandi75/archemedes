@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from archimedes.models.artifacts import VersionedArtifact
 from archimedes.models.change import ChangeEvent
 from archimedes.models.claims import ClaimRecord
+from archimedes.models.diffs import ArtifactDiff
 from archimedes.models.evidence import EvidenceSource
 from archimedes.models.session import ArchitectureSession
 
@@ -15,6 +16,7 @@ CONTAINER_NAMES = {
     "artifacts": "versioned_artifacts",
     "claims_evidence": "claims_evidence",
     "change_events": "change_events",
+    "diffs": "diffs",
 }
 
 
@@ -58,6 +60,7 @@ class CosmosStorageClient:
     artifacts: CosmosContainerProtocol
     claims_evidence: CosmosContainerProtocol
     change_events: CosmosContainerProtocol
+    diffs: CosmosContainerProtocol
     max_write_retries: int = 3
 
     @classmethod
@@ -67,15 +70,24 @@ class CosmosStorageClient:
             artifacts=database.get_container_client(CONTAINER_NAMES["artifacts"]),
             claims_evidence=database.get_container_client(CONTAINER_NAMES["claims_evidence"]),
             change_events=database.get_container_client(CONTAINER_NAMES["change_events"]),
+            diffs=database.get_container_client(CONTAINER_NAMES["diffs"]),
         )
 
     @staticmethod
     def ensure_containers(database: CosmosDatabaseProtocol) -> None:
         # Keep partitioning consistent across all containers for MVP simplicity.
+        partition_key = {"paths": ["/session_id"], "kind": "Hash"}
+        try:
+            from azure.cosmos import PartitionKey
+
+            partition_key = PartitionKey(path="/session_id")
+        except Exception:
+            pass
+
         for name in CONTAINER_NAMES.values():
             database.create_container_if_not_exists(
                 id=name,
-                partition_key={"paths": ["/session_id"], "kind": "Hash"},
+                partition_key=partition_key,
             )
 
     def read_session(self, session_id: str) -> ArchitectureSession | None:
@@ -107,6 +119,28 @@ class CosmosStorageClient:
                 parameters=[
                     {"name": "@session_id", "value": session_id},
                     {"name": "@stage", "value": stage},
+                ],
+                enable_cross_partition_query=False,
+            )
+        )
+        if not items:
+            return None
+        return VersionedArtifact.model_validate(self._clean_payload(items[0]))
+
+    def read_artifact_version(
+        self, session_id: str, stage: str, version: int
+    ) -> VersionedArtifact | None:
+        query = (
+            "SELECT TOP 1 * FROM c "
+            "WHERE c.session_id = @session_id AND c.stage = @stage AND c.version = @version"
+        )
+        items = list(
+            self.artifacts.query_items(
+                query=query,
+                parameters=[
+                    {"name": "@session_id", "value": session_id},
+                    {"name": "@stage", "value": self._value(stage)},
+                    {"name": "@version", "value": version},
                 ],
                 enable_cross_partition_query=False,
             )
@@ -169,6 +203,132 @@ class CosmosStorageClient:
             payload=payload,
         )
         return ChangeEvent.model_validate(self._clean_payload(stored))
+
+    def read_change_event(self, session_id: str, change_event_id: str) -> ChangeEvent | None:
+        payload = self._read_by_id(
+            self.change_events,
+            item_id=change_event_id,
+            partition_key=session_id,
+        )
+        if payload is None:
+            return None
+        return ChangeEvent.model_validate(self._clean_payload(payload))
+
+    def list_change_events(self, session_id: str) -> list[ChangeEvent]:
+        items = list(
+            self.change_events.query_items(
+                query="SELECT * FROM c WHERE c.session_id = @session_id",
+                parameters=[{"name": "@session_id", "value": session_id}],
+                enable_cross_partition_query=False,
+            )
+        )
+        return [
+            ChangeEvent.model_validate(self._clean_payload(item))
+            for item in items
+        ]
+
+    def list_claims(
+        self,
+        session_id: str,
+        *,
+        stage: str | None = None,
+        claim_type: str | None = None,
+        requires_user_validation: bool | None = None,
+        min_confidence: float | None = None,
+    ) -> list[ClaimRecord]:
+        items = list(
+            self.claims_evidence.query_items(
+                query="SELECT * FROM c WHERE c.session_id = @session_id",
+                parameters=[{"name": "@session_id", "value": session_id}],
+                enable_cross_partition_query=False,
+            )
+        )
+        claims: list[ClaimRecord] = []
+        for item in items:
+            clean = self._clean_payload(item)
+            if "claim_id" not in clean:
+                continue
+            claim = ClaimRecord.model_validate(clean)
+            if stage is not None and self._value(claim.stage) != self._value(stage):
+                continue
+            if claim_type is not None and self._value(claim.type) != self._value(claim_type):
+                continue
+            if (
+                requires_user_validation is not None
+                and claim.requires_user_validation is not requires_user_validation
+            ):
+                continue
+            if min_confidence is not None and claim.confidence < min_confidence:
+                continue
+            claims.append(claim)
+        return claims
+
+    def list_evidence(
+        self,
+        session_id: str,
+        *,
+        retrieved_via: str | None = None,
+        trust_level: str | None = None,
+    ) -> list[EvidenceSource]:
+        items = list(
+            self.claims_evidence.query_items(
+                query="SELECT * FROM c WHERE c.session_id = @session_id",
+                parameters=[{"name": "@session_id", "value": session_id}],
+                enable_cross_partition_query=False,
+            )
+        )
+        evidence_sources: list[EvidenceSource] = []
+        for item in items:
+            clean = self._clean_payload(item)
+            if "evidence_id" not in clean:
+                continue
+            evidence = EvidenceSource.model_validate(clean)
+            if retrieved_via is not None and self._value(evidence.retrieved_via) != self._value(retrieved_via):
+                continue
+            if trust_level is not None and self._value(evidence.trust_level) != self._value(trust_level):
+                continue
+            evidence_sources.append(evidence)
+        return evidence_sources
+
+    def upsert_diff(self, diff: ArtifactDiff) -> ArtifactDiff:
+        payload = diff.model_dump(mode="json")
+        payload["id"] = diff.diff_id
+        stored = self._write_with_optimistic_concurrency(
+            container=self.diffs,
+            item_id=diff.diff_id,
+            partition_key=diff.session_id,
+            payload=payload,
+        )
+        return ArtifactDiff.model_validate(self._clean_payload(stored))
+
+    def read_diff(self, session_id: str, diff_id: str) -> ArtifactDiff | None:
+        payload = self._read_by_id(self.diffs, item_id=diff_id, partition_key=session_id)
+        if payload is None:
+            return None
+        return ArtifactDiff.model_validate(self._clean_payload(payload))
+
+    def list_diffs(
+        self,
+        session_id: str,
+        *,
+        stage: str | None = None,
+    ) -> list[ArtifactDiff]:
+        query = "SELECT * FROM c WHERE c.session_id = @session_id"
+        parameters = [{"name": "@session_id", "value": session_id}]
+        if stage is not None:
+            query += " AND c.stage = @stage"
+            parameters.append({"name": "@stage", "value": self._value(stage)})
+        items = list(
+            self.diffs.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=False,
+            )
+        )
+        return [
+            ArtifactDiff.model_validate(self._clean_payload(item))
+            for item in items
+        ]
 
     def find_by_idempotency_key(
         self,
@@ -271,3 +431,7 @@ class CosmosStorageClient:
         clean.pop("id", None)
         clean.pop("_etag", None)
         return clean
+
+    @staticmethod
+    def _value(value: Any) -> str:
+        return value.value if hasattr(value, "value") else str(value)

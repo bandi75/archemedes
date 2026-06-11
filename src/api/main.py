@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from archimedes.orchestrator.controller import StageController
+from archimedes.storage.cosmos_client import CosmosStorageClient
 from archimedes.state.state_manager import ArchitectureStateManager
 
 from .routers import artifacts, changes, diffs, evidence, sessions
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:8501"]
     required_env_vars: tuple[str, ...] = ("FOUNDRY_PROJECT_ENDPOINT",)
     validate_required_env: bool = True
+    storage_backend: str = "memory"
+    cosmos_endpoint: str | None = None
+    cosmos_database_name: str = "archimedes"
+    cosmos_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -49,13 +54,51 @@ def _error_response(status_code: int, detail: str, error_code: str) -> JSONRespo
     )
 
 
+def _build_storage(settings: Settings):
+    if settings.storage_backend.strip().lower() != "cosmos":
+        return InMemoryArchimedesStorage()
+
+    endpoint = (
+        settings.cosmos_endpoint
+        or os.getenv("COSMOS_ENDPOINT")
+        or os.getenv("AZURE_COSMOS_ENDPOINT")
+    )
+    database_name = (
+        settings.cosmos_database_name
+        or os.getenv("COSMOS_DATABASE_NAME")
+        or os.getenv("COSMOS_DATABASE")
+        or "archimedes"
+    )
+    key = settings.cosmos_key or os.getenv("COSMOS_KEY") or os.getenv("AZURE_COSMOS_KEY")
+    if not endpoint:
+        raise RuntimeError("Missing Cosmos endpoint. Set ARCHIMEDES_API_COSMOS_ENDPOINT or COSMOS_ENDPOINT.")
+
+    try:
+        from azure.cosmos import CosmosClient
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("azure-cosmos is required when ARCHIMEDES_API_STORAGE_BACKEND=cosmos.") from exc
+
+    if key:
+        client = CosmosClient(endpoint, credential=key)
+    else:
+        try:
+            from azure.identity import DefaultAzureCredential
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError("azure-identity is required for Cosmos managed identity authentication.") from exc
+        client = CosmosClient(endpoint, credential=DefaultAzureCredential())
+
+    database = client.create_database_if_not_exists(id=database_name)
+    CosmosStorageClient.ensure_containers(database)
+    return CosmosStorageClient.from_database(database)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.settings = settings
-        storage = getattr(app.state, "storage", None) or InMemoryArchimedesStorage()
+        storage = getattr(app.state, "storage", None) or _build_storage(settings)
         app.state.storage = storage
         app.state.state_manager = ArchitectureStateManager(storage=storage)
         app.state.stage_controller = StageController(

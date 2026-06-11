@@ -7,6 +7,7 @@ from typing import Any
 from archimedes.models.artifacts import VersionedArtifact
 from archimedes.models.change import ChangeEvent
 from archimedes.models.claims import ClaimRecord
+from archimedes.models.diffs import ArtifactDiff, FieldDiff
 from archimedes.models.enums import ChangeType, ClaimType, StageName
 from archimedes.models.evidence import EvidenceSource
 from archimedes.models.quality_gates import QualityGateResult
@@ -83,6 +84,8 @@ class FakeContainer:
 
         if "@stage" in params:
             rows = [r for r in rows if r.get("stage") == params["@stage"]]
+            if "@version" in params:
+                rows = [r for r in rows if r.get("version") == params["@version"]]
             rows.sort(key=lambda r: r.get("version", 0), reverse=True)
             return rows[:1]
 
@@ -156,6 +159,24 @@ def test_upsert_artifact_and_read_latest_artifact():
     assert latest.version == 2
 
 
+def test_read_artifact_version_returns_exact_version():
+    db = FakeDatabase()
+    client = CosmosStorageClient.from_database(db)
+    session_id = "session_versions"
+
+    client.upsert_artifact(_artifact(session_id=session_id, version=1))
+    client.upsert_artifact(_artifact(session_id=session_id, version=2))
+
+    artifact = client.read_artifact_version(
+        session_id=session_id,
+        stage=StageName.OPTIONS_GENERATION,
+        version=1,
+    )
+
+    assert artifact is not None
+    assert artifact.version == 1
+
+
 def test_find_by_idempotency_key_returns_matching_artifact_document():
     db = FakeDatabase()
     client = CosmosStorageClient.from_database(db)
@@ -208,6 +229,43 @@ def test_append_claim_evidence_and_change_event():
 
     assert saved_claim.evidence_ids == [saved_evidence.evidence_id]
     assert saved_change.changed_field == "throughput"
+
+    loaded_change = client.read_change_event(session_id, saved_change.change_event_id)
+    listed_changes = client.list_change_events(session_id)
+    listed_claims = client.list_claims(session_id, stage=StageName.OPTIONS_GENERATION)
+    listed_evidence = client.list_evidence(session_id, retrieved_via="web_search")
+
+    assert loaded_change is not None
+    assert listed_changes[0].change_event_id == saved_change.change_event_id
+    assert listed_claims[0].claim_id == saved_claim.claim_id
+    assert listed_evidence[0].evidence_id == saved_evidence.evidence_id
+
+
+def test_upsert_read_and_list_diffs():
+    db = FakeDatabase()
+    client = CosmosStorageClient.from_database(db)
+    diff = ArtifactDiff(
+        session_id="session_diff",
+        stage=StageName.HLD_GENERATION,
+        before_version=1,
+        after_version=2,
+        field_diffs=[
+            FieldDiff(
+                field_path="$.components[1]",
+                diff_type="added",
+                after={"name": "AKS"},
+            )
+        ],
+        summary="Added AKS.",
+    )
+
+    saved = client.upsert_diff(diff)
+    loaded = client.read_diff("session_diff", saved.diff_id)
+    listed = client.list_diffs("session_diff", stage=StageName.HLD_GENERATION)
+
+    assert loaded is not None
+    assert loaded.diff_id == saved.diff_id
+    assert listed[0].diff_id == saved.diff_id
 
 
 def test_optimistic_concurrency_retries_on_precondition_failure():
