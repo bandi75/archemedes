@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
@@ -20,6 +21,15 @@ from .routers import artifacts, changes, diffs, evidence, sessions
 from .storage import InMemoryArchimedesStorage
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
+# Cosmos SDK dumps full HTTP headers at INFO — keep it quiet
+logging.getLogger("azure.cosmos").setLevel(logging.WARNING)
+logging.getLogger("azure.core").setLevel(logging.WARNING)
 
 
 class Settings(BaseSettings):

@@ -1,10 +1,85 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 
+from archimedes.models.artifacts import VersionedArtifact
+from archimedes.models.base import new_id
+from archimedes.models.claims import ClaimRecord
+from archimedes.models.enums import ClaimType, QualityGateStatus, StageName
+from archimedes.models.evidence import EvidenceSource
+from archimedes.models.patches import StagePatch
+from archimedes.models.quality_gates import QualityGateResult
 from archimedes.models.session import ArchitectureSession
+
+
+def _options_artifact(session_id: str) -> VersionedArtifact:
+    """Pre-built OPTIONS_GENERATION artifact for Socrates test setup."""
+    return VersionedArtifact(
+        session_id=session_id,
+        stage=StageName.OPTIONS_GENERATION,
+        version=1,
+        stage_run_id=new_id("stage_run"),
+        content={
+            "options": [
+                {"option_id": "option_a", "name": "Primary Option", "summary": "The leading architecture option."},
+                {"option_id": "option_b", "name": "Fallback Option", "summary": "A simpler fallback."},
+            ]
+        },
+        quality_gate=QualityGateResult(status=QualityGateStatus.PASSED),
+    )
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.state_manager import ArchitectureStateManager
+
+
+class FakeAgentFactory:
+    """Minimal stand-in for AgentFactory in unit tests — no LLM calls."""
+
+    def run_stage(
+        self,
+        agent_name: str,
+        *,
+        session_id: str,
+        stage: StageName,
+        base_version: int,
+        user_message: str,
+    ) -> StagePatch:
+        stage_value = stage.value if isinstance(stage, StageName) else str(stage)
+        payload = {"stage": stage_value, "status": "generated", "summary": user_message[:80]}
+        patch_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        stage_run_id = new_id("stage_run")
+        evidence = EvidenceSource(
+            session_id=session_id,
+            source=f"fake-{stage_value}",
+            excerpt=user_message[:120],
+            retrieved_via="user_input",
+        )
+        claim = ClaimRecord(
+            session_id=session_id,
+            claim=f"{stage_value} processed by {agent_name}.",
+            type=ClaimType.ASSUMPTION,
+            confidence=0.65,
+            stage=stage,
+            evidence_ids=[evidence.evidence_id],
+        )
+        return StagePatch(
+            session_id=session_id,
+            stage=stage,
+            stage_run_id=stage_run_id,
+            base_version=base_version,
+            target_version=base_version + 1,
+            idempotency_key=hashlib.sha256(
+                f"{session_id}:{stage_value}:{stage_run_id}:{patch_hash}".encode()
+            ).hexdigest(),
+            patch_hash=patch_hash,
+            patch=payload,
+            claims=[claim],
+            evidence_sources=[evidence],
+            quality_gate_result=QualityGateResult(status=QualityGateStatus.PASSED),
+        )
 
 
 class FakeStorage:
@@ -87,7 +162,7 @@ def test_stage_controller_applies_current_stage_and_advances():
     session = ArchitectureSession(business_need="Build fraud detection assistant")
     storage = FakeStorage(session)
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     response = controller.process_message(session.session_id, "Need an architecture for fraud detection")
 
@@ -104,7 +179,7 @@ def test_stage_controller_preserves_pipeline_state_with_copying_storage():
     session = ArchitectureSession(business_need="Build fraud detection assistant")
     storage = CopyingFakeStorage(session)
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     response = controller.process_message(session.session_id, "Need an architecture for fraud detection")
 
@@ -121,7 +196,7 @@ def test_stage_controller_detects_requirement_change():
     )
     storage = FakeStorage(session)
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     response = controller.process_message(session.session_id, "Actually make it 100K TPS and multi-region")
 
@@ -140,10 +215,12 @@ def test_stage_controller_runs_evidence_checkpoint_after_socratic_review():
         current_stage="socratic_review",
     )
     storage = FakeStorage(session)
+    artifact = _options_artifact(session.session_id)
+    storage.artifacts[(session.session_id, "options_generation", 1)] = artifact
     manager = ArchitectureStateManager(storage=storage)
     controller = StageController(state_manager=manager, storage=storage)
 
-    response = controller.process_message(session.session_id, "Review the options")
+    response = controller.process_message(session.session_id, "Proceed with Socratic review")
 
     assert response.stage_status == "completed"
     assert any("evidence_audit_checkpoint:v1" == artifact for artifact in response.artifacts_produced)
@@ -154,7 +231,7 @@ def test_stage_controller_runs_evidence_checkpoint_after_socratic_review():
     socratic_artifact = storage.read_latest_artifact(session.session_id, "socratic_review")
     assert socratic_artifact is not None
     review = socratic_artifact.content["socratic_review"]
-    assert review["synthesis"]["recommended_option_id"] == "option_event_streaming"
+    assert review["synthesis"]["recommended_option_id"] == "option_a"
     assert review["persona_analyses"]
 
 
@@ -164,6 +241,8 @@ def test_repeated_completed_stage_request_does_not_advance_pipeline():
         current_stage="socratic_review",
     )
     storage = FakeStorage(session)
+    artifact = _options_artifact(session.session_id)
+    storage.artifacts[(session.session_id, "options_generation", 1)] = artifact
     manager = ArchitectureStateManager(storage=storage)
     controller = StageController(state_manager=manager, storage=storage)
 
@@ -184,7 +263,7 @@ def test_stage_controller_runs_final_evidence_audit_after_waf_review():
     )
     storage = FakeStorage(session)
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     response = controller.process_message(session.session_id, "Review WAF findings")
 

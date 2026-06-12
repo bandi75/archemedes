@@ -11,11 +11,24 @@ load_dotenv()
 
 @dataclass(slots=True)
 class FoundryChatClient:
-    """Lightweight shared client wrapper for specialist agent routines."""
+    """Shared client wrapper for specialist agent LLM calls via Azure AI Inference."""
 
     project_endpoint: str
     model: str
     credential: Any
+
+    def complete(self, messages: list, *, tools: list | None = None) -> Any:
+        from azure.ai.inference import ChatCompletionsClient
+
+        client = ChatCompletionsClient(
+            endpoint=self.project_endpoint,
+            credential=self.credential,
+        )
+        kwargs: dict[str, Any] = {"messages": messages, "model": self.model}
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        return client.complete(**kwargs)
 
 
 def create_foundry_chat_client() -> FoundryChatClient:

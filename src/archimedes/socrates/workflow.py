@@ -19,6 +19,9 @@ from .dispatcher import DispatcherExecutor
 from .persona import PersonaExecutor
 from .synthesizer import SocratesSynthesizerExecutor
 
+import logging
+logger = logging.getLogger(__name__)
+
 
 DEPTH_PERSONAS: dict[SocratesDepth, list[PersonaName]] = {
     SocratesDepth.LIGHT: [
@@ -68,16 +71,20 @@ class SocratesWorkflow:
     include_cross_examiner: bool = False
 
     async def run(self, context: SocratesReviewContext) -> SocraticReview:
+        personas = [e.persona for e in self.persona_executors]
+        logger.info("[socrates] running depth=%s personas=%s session=%s", self.depth, personas, context.session_id)
         dispatch = await self.dispatcher.dispatch(context)
         analyses = await asyncio.gather(
             *(executor.run(dispatch.context) for executor in self.persona_executors)
         )
         cross_examination = self._cross_examine(analyses) if self.include_cross_examiner else None
-        return await self.synthesizer.synthesize(
+        review = await self.synthesizer.synthesize(
             context,
             list(analyses),
             cross_examination=cross_examination,
         )
+        logger.info("[socrates] review complete session=%s quality_gate=%s", context.session_id, review.quality_gate)
+        return review
 
     def run_sync(self, context: SocratesReviewContext) -> SocraticReview:
         try:

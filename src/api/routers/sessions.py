@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 
 from archimedes.models.session import ArchitectureSession
@@ -38,7 +41,9 @@ async def create_session(
         business_need=request.business_need,
         user_id=request.created_by,
     )
-    return storage.upsert_session(session)
+    saved = storage.upsert_session(session)
+    logger.info("[session] created session=%s title=%r", saved.session_id, saved.title)
+    return saved
 
 
 @router.post("/{session_id}/messages")
@@ -48,6 +53,7 @@ async def post_message(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     controller: StageController = Depends(get_stage_controller),
 ) -> OrchestratorResponse:
+    logger.info("[session] message session=%s idem=%s", session_id, idempotency_key)
     try:
         return controller.process_message(
             session_id,

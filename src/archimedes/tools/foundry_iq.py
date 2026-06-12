@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import time
 from typing import Any
 
 import httpx
@@ -9,6 +11,8 @@ from dotenv import load_dotenv
 from archimedes.models.evidence import EvidenceSource
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def _use_mock_kb() -> bool:
@@ -57,13 +61,45 @@ def knowledge_base_retrieve(query: str, top_k: int = 5) -> list[dict[str, Any]]:
         "top": top_k,
     }
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(url, params=params, headers=headers, json=payload)
-        response.raise_for_status()
-        body = response.json()
+    logger.info(
+        "[azure-search] POST %s | index=%s kb=%s@%s top_k=%d | query=%r",
+        url,
+        index_name,
+        kb_name,
+        kb_version,
+        top_k,
+        query[:120],
+    )
+
+    t0 = time.perf_counter()
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(url, params=params, headers=headers, json=payload)
+            response.raise_for_status()
+            body = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "[azure-search] HTTP %s from %s — %s",
+            exc.response.status_code,
+            url,
+            exc.response.text[:300],
+        )
+        raise
+    except httpx.RequestError as exc:
+        logger.error("[azure-search] Request failed: %s", exc)
+        raise
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    hits = body.get("value", [])
+    logger.info(
+        "[azure-search] %d result(s) in %.0f ms | scores=%s",
+        len(hits),
+        elapsed_ms,
+        [round(h.get("@search.score", 0), 3) for h in hits],
+    )
 
     results: list[dict[str, Any]] = []
-    for item in body.get("value", []):
+    for item in hits:
         results.append(
             {
                 "source_document": item.get("title") or item.get("metadata_storage_name"),
@@ -115,6 +151,7 @@ class FoundryIQRetriever:
         resolved_session_id = session_id or self.default_session_id
 
         if _use_mock_kb():
+            logger.info("[kb-retriever] USE_MOCK_KB=true — returning fixture data (no Azure call)")
             from .mock_foundry_iq import MockFoundryIQAdapter
 
             return MockFoundryIQAdapter().retrieve(
@@ -123,11 +160,18 @@ class FoundryIQRetriever:
                 session_id=resolved_session_id,
             )
 
+        logger.info("[kb-retriever] USE_MOCK_KB=false — calling Azure AI Search")
         raw_items = knowledge_base_retrieve(query=query, top_k=top_k)
-        return [
+        evidence = [
             parse_kb_response_to_evidence_source(raw_item, session_id=resolved_session_id)
             for raw_item in raw_items
         ]
+        logger.info(
+            "[kb-retriever] Retrieved %d evidence item(s) | sources=%s",
+            len(evidence),
+            [e.source for e in evidence],
+        )
+        return evidence
 
 
 def retrieve_evidence(query: str, top_k: int = 5, session_id: str = "session_runtime") -> list[EvidenceSource]:

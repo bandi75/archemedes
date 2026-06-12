@@ -8,3 +8,4 @@ streamlit
 pytest
 azure-cosmos
 azure-identity
+azure-ai-inference

@@ -2,26 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import Field
 
+from archimedes.agents.factory import AgentFactory
 from archimedes.agents.pattern_detector import PatternDetector
 from archimedes.agents.evidence_auditor import EvidenceAuditor
 from archimedes.models.base import ArchimedesModel, new_id
 from archimedes.models.change import ChangeEvent
-from archimedes.models.claims import ClaimRecord
 from archimedes.models.enums import (
     ChangeType,
-    ClaimType,
-    EvidenceRetrievalMethod,
-    QualityGateStatus,
-    SourceFreshness,
     StageName,
-    TrustLevel,
 )
-from archimedes.models.evidence import EvidenceSource
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
 from archimedes.models.socrates import SocratesReviewContext
@@ -33,6 +28,7 @@ from archimedes.orchestrator.dependency_engine import (
 from archimedes.socrates.workflow import SocratesWorkflow, build_socrates_workflow
 from archimedes.state.state_manager import ArchitectureStateManager
 
+logger = logging.getLogger(__name__)
 
 PIPELINE_ORDER: list[StageName] = [
     StageName.INTAKE,
@@ -46,6 +42,16 @@ PIPELINE_ORDER: list[StageName] = [
     StageName.MINI_WAF_REVIEW,
     StageName.FINAL_EVIDENCE_AUDIT,
 ]
+
+# Stages handled by specialist LLM agents
+STAGE_AGENT_MAP: dict[StageName, str] = {
+    StageName.INTAKE: "IntakeAgent",
+    StageName.REQUIREMENTS_EXTRACTION: "RequirementsEngineer",
+    StageName.OPTIONS_GENERATION: "OptionsGenerator",
+    StageName.ADR_GENERATION: "ADRWriter",
+    StageName.HLD_GENERATION: "HLDDesigner",
+    StageName.MINI_WAF_REVIEW: "WAFReviewer",
+}
 
 
 class SupportsControllerStorage(Protocol):
@@ -77,6 +83,7 @@ class StageController:
     pattern_detector: PatternDetector = field(default_factory=PatternDetector)
     evidence_auditor: EvidenceAuditor = field(default_factory=EvidenceAuditor)
     socrates_workflow: SocratesWorkflow = field(default_factory=build_socrates_workflow)
+    agent_factory: AgentFactory = field(default_factory=AgentFactory.from_env)
 
     def process_message(
         self,
@@ -89,8 +96,12 @@ class StageController:
         if session is None:
             raise ValueError(f"Session not found: {session_id}")
 
+        logger.info("[controller] process_message session=%s stage=%s", session_id, session.current_stage)
+
         changes = detect_requirement_changes(user_message)
         if changes:
+            logger.info("[controller] requirement change detected fields=%s — re-running impacted stages",
+                        [c.changed_field for c in changes])
             event = ChangeEvent(
                 session_id=session_id,
                 change_type=ChangeType.REQUIREMENT_MODIFIED,
@@ -131,8 +142,10 @@ class StageController:
             )
 
         stage = self._resolve_active_stage(session)
+        logger.info("[controller] active_stage=%s", stage)
         requested_stage = self._requested_stage(user_message)
         if requested_stage is not None and requested_stage != stage:
+            logger.info("[controller] user requested stage=%s (current=%s)", requested_stage, stage)
             existing = self.storage.read_latest_artifact(
                 session_id,
                 self._stage_value(requested_stage),
@@ -159,6 +172,8 @@ class StageController:
             idempotency_key=idempotency_key,
         )
 
+        if apply_result.applied:
+            logger.info("[controller] stage=%s completed v%s", stage, apply_result.version)
         if not apply_result.applied:
             return OrchestratorResponse(
                 current_stage=stage,
@@ -252,6 +267,7 @@ class StageController:
     ):
         base_version = session.latest_artifact_versions.get(stage, 0)
         if stage == StageName.PATTERN_DETECTION:
+            logger.info("[controller] executing stage=%s via PatternDetector", stage)
             patch = self.pattern_detector.detect(
                 session_id=session.session_id,
                 stage_run_id=new_id("stage_run"),
@@ -259,14 +275,20 @@ class StageController:
                 requirements_text=user_message,
             )
         elif stage == StageName.SOCRATIC_REVIEW:
+            logger.info("[controller] executing stage=%s via SocratesWorkflow depth=%s", stage, self.socrates_workflow.depth)
             patch = self._socratic_stage_patch(
                 session=session,
                 base_version=base_version,
                 user_message=user_message,
             )
         else:
-            patch = self._generic_stage_patch(
-                session=session,
+            agent_name = STAGE_AGENT_MAP.get(stage)
+            if agent_name is None:
+                raise ValueError(f"No agent mapped for stage: {stage}")
+            logger.info("[controller] executing stage=%s via agent=%s", stage, agent_name)
+            patch = self.agent_factory.run_stage(
+                agent_name,
+                session_id=session.session_id,
                 stage=stage,
                 base_version=base_version,
                 user_message=user_message,
@@ -289,52 +311,6 @@ class StageController:
         )
         return self.state_manager.apply_patch(patch)
 
-    def _generic_stage_patch(
-        self,
-        *,
-        session: ArchitectureSession,
-        stage: StageName,
-        base_version: int,
-        user_message: str,
-    ) -> StagePatch:
-        payload = self._stage_payload(stage, user_message)
-        patch_hash = self._compute_hash(payload)
-        evidence = EvidenceSource(
-            session_id=session.session_id,
-            source="User-provided architecture context",
-            retrieved_via=EvidenceRetrievalMethod.USER_INPUT,
-            excerpt=user_message.strip(),
-            source_freshness=SourceFreshness.CURRENT,
-            trust_level=TrustLevel.MEDIUM,
-            used_in_stages=[self._stage_value(stage)],
-        )
-        claim = ClaimRecord(
-            session_id=session.session_id,
-            claim=f"{stage} artifact generated from user context.",
-            type=ClaimType.ASSUMPTION,
-            confidence=0.65,
-            stage=stage,
-            evidence_ids=[evidence.evidence_id],
-        )
-        gate = QualityGateResult(status=QualityGateStatus.PASSED)
-        idem = hashlib.sha256(
-            f"{session.session_id}:{stage}:{base_version}:{patch_hash}".encode("utf-8")
-        ).hexdigest()
-
-        return StagePatch(
-            session_id=session.session_id,
-            stage=stage,
-            stage_run_id=new_id("stage_run"),
-            base_version=base_version,
-            target_version=base_version + 1,
-            idempotency_key=idem,
-            patch_hash=patch_hash,
-            patch=payload,
-            claims=[claim],
-            evidence_sources=[evidence],
-            quality_gate_result=gate,
-        )
-
     def _socratic_stage_patch(
         self,
         *,
@@ -353,7 +329,7 @@ class StageController:
                 "title": session.title,
             },
             requirements_summary=self._requirements_summary(session, user_message),
-            architecture_options=self._architecture_options(session, user_message),
+            architecture_options=self._architecture_options(session),
             evaluation_criteria=["reliability", "security", "cost", "delivery"],
         )
         review = self.socrates_workflow.run_sync(context)
@@ -375,11 +351,7 @@ class StageController:
             "source": "session_context",
         }
 
-    def _architecture_options(
-        self,
-        session: ArchitectureSession,
-        user_message: str,
-    ) -> list[dict]:
+    def _architecture_options(self, session: ArchitectureSession) -> list[dict]:
         artifact = self.storage.read_latest_artifact(
             session.session_id,
             self._stage_value(StageName.OPTIONS_GENERATION),
@@ -388,21 +360,7 @@ class StageController:
             options = artifact.content.get("options")
             if isinstance(options, list) and options:
                 return options
-
-        scale = self._scale_target(f"{session.business_need} {user_message}")
-        multi_region = self._is_multi_region(f"{session.business_need} {user_message}")
-        return [
-            {
-                "option_id": "option_event_streaming",
-                "name": "Event Hubs streaming fraud pipeline",
-                "summary": (
-                    "Partitioned event ingestion with real-time scoring and explicit "
-                    "security, operations, and cost controls."
-                ),
-                "capacity_target": scale,
-                "topology": "multi-region active-active" if multi_region else "single-region resilient",
-            }
-        ]
+        return []
 
     @staticmethod
     def _resolve_active_stage(session: ArchitectureSession) -> StageName:
@@ -431,140 +389,6 @@ class StageController:
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    def _stage_payload(self, stage: StageName, user_message: str) -> dict:
-        stage_value = self._stage_value(stage)
-        text = user_message.strip()
-        scale = self._scale_target(text)
-        multi_region = self._is_multi_region(text)
-
-        if stage == StageName.OPTIONS_GENERATION:
-            options = [
-                {
-                    "option_id": "option_event_streaming",
-                    "name": "Event Hubs streaming fraud pipeline",
-                    "fit": "recommended",
-                    "capacity_target": scale,
-                    "topology": "multi-region active-active" if multi_region else "single-region resilient",
-                    "core_services": (
-                        ["Partitioned Event Hubs", "AKS", "Cosmos DB multi-region", "Front Door"]
-                        if multi_region or scale == "100K TPS"
-                        else ["Event Hubs", "Stream Analytics", "Azure Functions", "Cosmos DB"]
-                    ),
-                },
-                {
-                    "option_id": "option_serverless",
-                    "name": "Serverless event scoring",
-                    "fit": "conditional",
-                    "capacity_target": scale,
-                    "topology": "single-region",
-                    "core_services": ["Event Hubs", "Azure Functions", "Cosmos DB"],
-                },
-                {
-                    "option_id": "option_microservices",
-                    "name": "AKS microservices scoring platform",
-                    "fit": "strong at high scale" if scale == "100K TPS" else "higher operational overhead",
-                    "capacity_target": scale,
-                    "topology": "multi-region active-active" if multi_region else "regional",
-                    "core_services": ["AKS", "Event Hubs", "Redis", "Cosmos DB"],
-                },
-            ]
-            return {
-                "summary": text,
-                "stage": stage_value,
-                "status": "generated",
-                "options": options,
-                "cost_estimate": {
-                    "relative_monthly_cost": "high" if scale == "100K TPS" or multi_region else "medium",
-                    "main_cost_drivers": ["stream partitions", "compute replicas", "multi-region data writes"],
-                },
-            }
-
-        if stage == StageName.ADR_GENERATION:
-            return {
-                "summary": text,
-                "stage": stage_value,
-                "status": "generated",
-                "title": "ADR: Real-time fraud detection architecture",
-                "decision": (
-                    "Adopt partitioned Event Hubs with active-active regional scoring."
-                    if multi_region or scale == "100K TPS"
-                    else "Adopt Event Hubs with stream processing and serverless scoring."
-                ),
-                "context": {
-                    "scale_target": scale,
-                    "resiliency": "multi-region active-active" if multi_region else "99.95% regional resilience",
-                },
-                "consequences": (
-                    ["higher cost", "more operational complexity", "regional failover capability"]
-                    if multi_region or scale == "100K TPS"
-                    else ["lower complexity", "regional dependency", "simpler operations"]
-                ),
-            }
-
-        if stage == StageName.HLD_GENERATION:
-            components = [
-                {"name": "Event Hubs", "role": "transaction ingestion", "scale_target": scale},
-                {"name": "Scoring workers", "role": "real-time fraud inference"},
-                {"name": "Cosmos DB", "role": "feature and decision store"},
-            ]
-            if multi_region or scale == "100K TPS":
-                components.extend(
-                    [
-                        {"name": "Azure Front Door", "role": "global ingress and failover"},
-                        {"name": "AKS", "role": "horizontally scaled scoring runtime"},
-                        {"name": "Cosmos DB multi-region writes", "role": "active-active persistence"},
-                    ]
-                )
-            return {
-                "summary": text,
-                "stage": stage_value,
-                "status": "generated",
-                "title": "Fraud Detection HLD",
-                "components": components,
-                "data_flows": [
-                    {
-                        "from": "payment gateway",
-                        "to": "stream ingestion",
-                        "latency_target": "sub-second",
-                    },
-                    {
-                        "from": "scoring workers",
-                        "to": "decision API",
-                        "resiliency": "multi-region" if multi_region else "regional",
-                    },
-                ],
-            }
-
-        if stage == StageName.MINI_WAF_REVIEW:
-            findings = [
-                {
-                    "pillar": "Reliability",
-                    "severity": "warning" if multi_region or scale == "100K TPS" else "info",
-                    "finding": (
-                        "Active-active failover requires tested conflict handling."
-                        if multi_region
-                        else "Regional resiliency must be validated against 99.95% availability."
-                    ),
-                },
-                {
-                    "pillar": "Cost Optimization",
-                    "severity": "warning" if scale == "100K TPS" else "info",
-                    "finding": "High throughput increases partition and compute cost.",
-                },
-            ]
-            return {
-                "summary": text,
-                "stage": stage_value,
-                "status": "generated",
-                "findings": findings,
-            }
-
-        return {
-            "summary": text,
-            "stage": stage_value,
-            "status": "generated",
-        }
-
     @staticmethod
     def _stage_value(stage: StageName | str) -> str:
         return stage.value if isinstance(stage, StageName) else str(stage)
@@ -575,20 +399,6 @@ class StageController:
             f"{user_message.strip()} "
             f"[re-reasoning stage={stage.value} change_event_id={change_event_id}]"
         )
-
-    @staticmethod
-    def _scale_target(user_message: str) -> str:
-        lowered = user_message.lower().replace(" ", "")
-        if "100ktps" in lowered or "100,000tps" in lowered:
-            return "100K TPS"
-        if "10ktps" in lowered or "10,000tps" in lowered:
-            return "10K TPS"
-        return "current target"
-
-    @staticmethod
-    def _is_multi_region(user_message: str) -> bool:
-        lowered = user_message.lower()
-        return "multi-region" in lowered or "multi region" in lowered or "active-active" in lowered
 
     @staticmethod
     def _requested_stage(user_message: str) -> StageName | None:
