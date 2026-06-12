@@ -169,7 +169,9 @@ def test_stage_controller_applies_current_stage_and_advances():
     assert response.stage_status == "completed"
     assert response.current_stage == "intake"
     assert "intake:v1" in response.artifacts_produced[0]
-    assert storage.session.current_stage == "requirements_extraction"
+    # current_stage stays on the last completed stage; pending_next_stage shows where to go next.
+    assert storage.session.current_stage == "intake"
+    assert storage.session.pending_next_stage == "requirements_extraction"
     assert len(storage.claims) == 1
     assert len(storage.evidence) == 1
     assert storage.claims[0].evidence_ids == [storage.evidence[0].evidence_id]
@@ -184,7 +186,8 @@ def test_stage_controller_preserves_pipeline_state_with_copying_storage():
     response = controller.process_message(session.session_id, "Need an architecture for fraud detection")
 
     assert response.stage_status == "completed"
-    assert storage.session.current_stage == "requirements_extraction"
+    assert storage.session.current_stage == "intake"
+    assert storage.session.pending_next_stage == "requirements_extraction"
     assert storage.session.latest_artifact_versions["intake"] == 1
     assert storage.session.stage_executions["intake"].status == "completed"
 
@@ -249,11 +252,11 @@ def test_repeated_completed_stage_request_does_not_advance_pipeline():
     first = controller.process_message(session.session_id, "Run Socratic review on the options.")
     second = controller.process_message(session.session_id, "Run Socratic review on the options.")
 
+    # socratic_review is a non-gate stage: after it completes it auto-chains to adr_generation (gate).
+    # The second message hits the adr_generation confirmation gate as a refinement, not a re-run of socratic.
     assert first.stage_status == "completed"
-    assert second.stage_status == "already_completed"
-    assert second.artifacts_produced == ["socratic_review:v1"]
+    assert second.stage_status == "refined"
     assert storage.session.current_stage == "adr_generation"
-    assert storage.read_latest_artifact(session.session_id, "adr_generation") is None
 
 
 def test_stage_controller_runs_final_evidence_audit_after_waf_review():

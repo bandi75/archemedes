@@ -79,6 +79,14 @@ class InMemoryArchimedesStorage:
         self.claims[claim.claim_id] = claim
         return claim
 
+    def update_claim(self, session_id: str, claim_id: str, **updates) -> ClaimRecord | None:
+        claim = self.claims.get(claim_id)
+        if claim is None or claim.session_id != session_id:
+            return None
+        updated = claim.model_copy(update=updates)
+        self.claims[claim_id] = updated
+        return updated
+
     def append_evidence(self, evidence: EvidenceSource) -> EvidenceSource:
         self.evidence[evidence.evidence_id] = evidence
         return evidence
@@ -140,6 +148,9 @@ class InMemoryArchimedesStorage:
         if min_confidence is not None:
             items = [claim for claim in items if claim.confidence >= min_confidence]
         return items
+
+    def list_sessions(self) -> list[ArchitectureSession]:
+        return sorted(self.sessions.values(), key=lambda s: s.created_at, reverse=True)
 
     def list_evidence(
         self,

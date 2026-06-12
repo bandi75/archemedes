@@ -93,6 +93,7 @@ class OrchestratorResponse(ArchimedesModel):
     change_detected: bool = False
     impacted_stages: list[StageName] = Field(default_factory=list)
     stable_stages: list[StageName] = Field(default_factory=list)
+    evidence_count: int = 0
 
 
 @dataclass(slots=True)
@@ -277,6 +278,7 @@ class StageController:
     ) -> OrchestratorResponse:
         """Execute stage (and any subsequent auto stages) until reaching a gate stage."""
         produced: list[str] = []
+        total_evidence: int = 0
 
         while True:
             session = self.storage.read_session(session_id)
@@ -295,10 +297,12 @@ class StageController:
                     artifacts_produced=produced,
                     next_prompt_for_user=f"Stage '{self._stage_value(stage)}' failed: {apply_result.reason}",
                     requires_user_action=True,
+                    evidence_count=total_evidence,
                 )
 
             logger.info("[controller] stage=%s completed v%s", stage, apply_result.version)
             produced.append(f"{self._stage_value(stage)}:v{apply_result.version}")
+            total_evidence += apply_result.evidence_count
 
             # Run inline audit if applicable (SOCRATIC_REVIEW → EVIDENCE_AUDIT_CHECKPOINT, etc.)
             session = self.storage.read_session(session_id) or session
@@ -330,6 +334,7 @@ class StageController:
                     quality_gate_result=gate,
                     next_prompt_for_user="Pipeline complete.",
                     requires_user_action=True,
+                    evidence_count=total_evidence,
                 )
 
             if stage not in _NON_GATE_STAGES:
@@ -350,6 +355,7 @@ class StageController:
                         f"or provide additional context to refine this stage."
                     ),
                     requires_user_action=True,
+                    evidence_count=total_evidence,
                 )
 
             # Non-gate stage: loop and run the next stage automatically.

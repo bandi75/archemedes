@@ -29,6 +29,9 @@ class ArchimedesApiClient:
     message_timeout: float = 600.0
     transport: httpx.BaseTransport | None = None
 
+    def get_sessions(self) -> dict[str, Any]:
+        return self._request("GET", "/sessions")
+
     def create_session(
         self,
         business_need: str,
@@ -86,8 +89,17 @@ class ArchimedesApiClient:
                 return None
             raise
 
-    def get_claims(self, session_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/sessions/{session_id}/claims")
+    def get_claims(self, session_id: str, *, requires_user_validation: bool | None = None) -> dict[str, Any]:
+        params = {}
+        if requires_user_validation is not None:
+            params["requires_user_validation"] = str(requires_user_validation).lower()
+        return self._request("GET", f"/sessions/{session_id}/claims", params=params or None)
+
+    def validate_claim(self, session_id: str, claim_id: str, *, accepted: bool, comment: str | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"accepted": accepted}
+        if comment:
+            payload["comment"] = comment
+        return self._request("POST", f"/sessions/{session_id}/claims/{claim_id}/validate", json=payload)
 
     def get_evidence(self, session_id: str) -> dict[str, Any]:
         return self._request("GET", f"/sessions/{session_id}/evidence")

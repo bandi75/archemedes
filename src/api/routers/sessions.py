@@ -31,6 +31,35 @@ class MessageRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str | None
+    current_stage: str | None
+    created_at: Any
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionSummary]
+    total: int
+
+
+@router.get("")
+async def list_sessions(
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> SessionListResponse:
+    sessions = storage.list_sessions()
+    items = [
+        SessionSummary(
+            session_id=s.session_id,
+            title=s.title,
+            current_stage=s.current_stage.value if hasattr(s.current_stage, "value") else s.current_stage,
+            created_at=s.created_at,
+        )
+        for s in sessions
+    ]
+    return SessionListResponse(items=items, total=len(items))
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_session(
     request: CreateSessionRequest,

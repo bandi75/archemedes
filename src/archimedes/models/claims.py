@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import Field, model_validator
 
 from .base import ArchimedesModel, new_id
@@ -17,6 +19,11 @@ class ClaimRecord(ArchimedesModel):
     artifact_id: str | None = None
     requires_user_validation: bool = False
     validation_question: str | None = None
+
+    # Human-in-the-loop validation decision
+    validated_at: datetime | None = None
+    validated_accepted: bool | None = None
+    validation_comment: str | None = None
 
     @model_validator(mode="after")
     def validate_claim_requirements(self):

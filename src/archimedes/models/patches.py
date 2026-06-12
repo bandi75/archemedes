@@ -46,3 +46,4 @@ class ApplyPatchResult(ArchimedesModel):
     current_version: int | None = None
     patch_base_version: int | None = None
     action: str | None = None
+    evidence_count: int = 0

@@ -165,6 +165,7 @@ class ArchitectureStateManager:
                     current_version=patch.target_version,
                     patch_base_version=patch.base_version,
                     action="applied",
+                    evidence_count=len(patch.evidence_sources),
                 )
             except Exception as exc:
                 if self._is_precondition_failed(exc) and retries < self.max_apply_retries:

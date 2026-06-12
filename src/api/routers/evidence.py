@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
@@ -46,6 +48,31 @@ async def list_claims(
             min_confidence=min_confidence,
         )
     )
+
+
+class ValidateClaimRequest(BaseModel):
+    accepted: bool
+    comment: str | None = None
+
+
+@router.post("/claims/{claim_id}/validate")
+async def validate_claim(
+    session_id: str,
+    claim_id: str,
+    request: ValidateClaimRequest,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> ClaimRecord:
+    _ensure_session(storage, session_id)
+    updated = storage.update_claim(
+        session_id,
+        claim_id,
+        validated_at=datetime.now(timezone.utc),
+        validated_accepted=request.accepted,
+        validation_comment=request.comment,
+    )
+    if updated is None:
+        raise api_error(404, f"Claim not found: {claim_id}", "claim_not_found")
+    return updated
 
 
 @router.get("/evidence")

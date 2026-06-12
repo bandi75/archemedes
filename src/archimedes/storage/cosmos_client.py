@@ -114,6 +114,19 @@ class CosmosStorageClient:
         )
         return ArchitectureSession.model_validate(self._clean_payload(stored))
 
+    def list_sessions(self) -> list[ArchitectureSession]:
+        items = list(
+            self.sessions.query_items(
+                query="SELECT * FROM c ORDER BY c.created_at DESC",
+                parameters=[],
+                enable_cross_partition_query=True,
+            )
+        )
+        return [
+            ArchitectureSession.model_validate(self._clean_payload(item))
+            for item in items
+        ]
+
     def read_latest_artifact(self, session_id: str, stage: str) -> VersionedArtifact | None:
         query = (
             "SELECT TOP 1 * FROM c "
@@ -197,6 +210,22 @@ class CosmosStorageClient:
             item_id=claim.claim_id,
             partition_key=claim.session_id,
             payload=payload,
+        )
+        return ClaimRecord.model_validate(self._clean_payload(stored))
+
+    def update_claim(self, session_id: str, claim_id: str, **updates) -> ClaimRecord | None:
+        payload = self._read_by_id(self.claims_evidence, item_id=claim_id, partition_key=session_id)
+        if payload is None or "claim_id" not in self._clean_payload(payload):
+            return None
+        claim = ClaimRecord.model_validate(self._clean_payload(payload))
+        updated = claim.model_copy(update=updates)
+        new_payload = updated.model_dump(mode="json")
+        new_payload["id"] = claim_id
+        stored = self._write_with_optimistic_concurrency(
+            container=self.claims_evidence,
+            item_id=claim_id,
+            partition_key=session_id,
+            payload=new_payload,
         )
         return ClaimRecord.model_validate(self._clean_payload(stored))
 
