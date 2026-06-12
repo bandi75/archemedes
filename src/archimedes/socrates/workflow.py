@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,7 +80,27 @@ class SocratesWorkflow:
         )
 
     def run_sync(self, context: SocratesReviewContext) -> SocraticReview:
-        return asyncio.run(self.run(context))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.run(context))
+
+        result: dict[str, SocraticReview | BaseException] = {}
+
+        def run_in_thread() -> None:
+            try:
+                result["review"] = asyncio.run(self.run(context))
+            except BaseException as exc:
+                result["error"] = exc
+
+        thread = threading.Thread(target=run_in_thread)
+        thread.start()
+        thread.join()
+
+        error = result.get("error")
+        if error is not None:
+            raise error
+        return result["review"]
 
     @staticmethod
     def build_stage_patch(review: SocraticReview, *, base_version: int) -> StagePatch:

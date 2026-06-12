@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 DEFAULT_API_URL = "http://localhost:8000/api/v1"

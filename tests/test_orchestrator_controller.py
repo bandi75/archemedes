@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from archimedes.models.session import ArchitectureSession
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.state_manager import ArchitectureStateManager
@@ -71,6 +73,16 @@ class FakeStorage:
         return [evidence for evidence in self.evidence if evidence.session_id == session_id]
 
 
+class CopyingFakeStorage(FakeStorage):
+    def read_session(self, session_id: str):
+        session = super().read_session(session_id)
+        return copy.deepcopy(session) if session is not None else None
+
+    def upsert_session(self, session):
+        self.session = copy.deepcopy(session)
+        return copy.deepcopy(self.session)
+
+
 def test_stage_controller_applies_current_stage_and_advances():
     session = ArchitectureSession(business_need="Build fraud detection assistant")
     storage = FakeStorage(session)
@@ -86,6 +98,20 @@ def test_stage_controller_applies_current_stage_and_advances():
     assert len(storage.claims) == 1
     assert len(storage.evidence) == 1
     assert storage.claims[0].evidence_ids == [storage.evidence[0].evidence_id]
+
+
+def test_stage_controller_preserves_pipeline_state_with_copying_storage():
+    session = ArchitectureSession(business_need="Build fraud detection assistant")
+    storage = CopyingFakeStorage(session)
+    manager = ArchitectureStateManager(storage=storage)
+    controller = StageController(state_manager=manager, storage=storage)
+
+    response = controller.process_message(session.session_id, "Need an architecture for fraud detection")
+
+    assert response.stage_status == "completed"
+    assert storage.session.current_stage == "requirements_extraction"
+    assert storage.session.latest_artifact_versions["intake"] == 1
+    assert storage.session.stage_executions["intake"].status == "completed"
 
 
 def test_stage_controller_detects_requirement_change():
@@ -125,6 +151,30 @@ def test_stage_controller_runs_evidence_checkpoint_after_socratic_review():
     assert "evidence_audit_checkpoint" in {
         str(stage) for stage in storage.session.latest_artifact_versions
     }
+    socratic_artifact = storage.read_latest_artifact(session.session_id, "socratic_review")
+    assert socratic_artifact is not None
+    review = socratic_artifact.content["socratic_review"]
+    assert review["synthesis"]["recommended_option_id"] == "option_event_streaming"
+    assert review["persona_analyses"]
+
+
+def test_repeated_completed_stage_request_does_not_advance_pipeline():
+    session = ArchitectureSession(
+        business_need="Build fraud detection assistant",
+        current_stage="socratic_review",
+    )
+    storage = FakeStorage(session)
+    manager = ArchitectureStateManager(storage=storage)
+    controller = StageController(state_manager=manager, storage=storage)
+
+    first = controller.process_message(session.session_id, "Run Socratic review on the options.")
+    second = controller.process_message(session.session_id, "Run Socratic review on the options.")
+
+    assert first.stage_status == "completed"
+    assert second.stage_status == "already_completed"
+    assert second.artifacts_produced == ["socratic_review:v1"]
+    assert storage.session.current_stage == "adr_generation"
+    assert storage.read_latest_artifact(session.session_id, "adr_generation") is None
 
 
 def test_stage_controller_runs_final_evidence_audit_after_waf_review():

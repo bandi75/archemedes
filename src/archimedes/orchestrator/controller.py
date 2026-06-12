@@ -24,11 +24,13 @@ from archimedes.models.enums import (
 from archimedes.models.evidence import EvidenceSource
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
+from archimedes.models.socrates import SocratesReviewContext
 from archimedes.models.session import ArchitectureSession
 from archimedes.orchestrator.dependency_engine import (
     compute_change_impact,
     detect_requirement_changes,
 )
+from archimedes.socrates.workflow import SocratesWorkflow, build_socrates_workflow
 from archimedes.state.state_manager import ArchitectureStateManager
 
 
@@ -48,6 +50,8 @@ PIPELINE_ORDER: list[StageName] = [
 
 class SupportsControllerStorage(Protocol):
     def read_session(self, session_id: str) -> ArchitectureSession | None: ...
+
+    def read_latest_artifact(self, session_id: str, stage: str): ...
 
     def upsert_session(self, session: ArchitectureSession) -> ArchitectureSession: ...
 
@@ -72,6 +76,7 @@ class StageController:
     storage: SupportsControllerStorage
     pattern_detector: PatternDetector = field(default_factory=PatternDetector)
     evidence_auditor: EvidenceAuditor = field(default_factory=EvidenceAuditor)
+    socrates_workflow: SocratesWorkflow = field(default_factory=build_socrates_workflow)
 
     def process_message(
         self,
@@ -126,6 +131,27 @@ class StageController:
             )
 
         stage = self._resolve_active_stage(session)
+        requested_stage = self._requested_stage(user_message)
+        if requested_stage is not None and requested_stage != stage:
+            existing = self.storage.read_latest_artifact(
+                session_id,
+                self._stage_value(requested_stage),
+            )
+            if existing is not None:
+                return OrchestratorResponse(
+                    current_stage=requested_stage,
+                    stage_status="already_completed",
+                    artifacts_produced=[
+                        f"{self._stage_value(requested_stage)}:v{existing.version}"
+                    ],
+                    quality_gate_result=existing.quality_gate,
+                    next_prompt_for_user=(
+                        f"{self._stage_value(requested_stage)} is already complete. "
+                        f"Current pipeline stage remains {self._stage_value(stage)}."
+                    ),
+                    requires_user_action=False,
+                )
+
         apply_result = self._execute_stage(
             session,
             stage,
@@ -143,6 +169,7 @@ class StageController:
             )
 
         produced = [f"{self._stage_value(stage)}:v{apply_result.version}"]
+        session = self.storage.read_session(session_id) or session
         next_stage = self._next_stage(stage)
         audit_stage = self._audit_stage_after(stage)
         if audit_stage is not None:
@@ -150,6 +177,7 @@ class StageController:
             if audit_result.applied:
                 produced.append(f"{self._stage_value(audit_stage)}:v{audit_result.version}")
                 next_stage = self._next_stage(audit_stage)
+                session = self.storage.read_session(session_id) or session
 
         session.current_stage = next_stage or audit_stage or stage
         session.last_successful_stage = audit_stage or stage
@@ -230,6 +258,12 @@ class StageController:
                 base_version=base_version,
                 requirements_text=user_message,
             )
+        elif stage == StageName.SOCRATIC_REVIEW:
+            patch = self._socratic_stage_patch(
+                session=session,
+                base_version=base_version,
+                user_message=user_message,
+            )
         else:
             patch = self._generic_stage_patch(
                 session=session,
@@ -300,6 +334,75 @@ class StageController:
             evidence_sources=[evidence],
             quality_gate_result=gate,
         )
+
+    def _socratic_stage_patch(
+        self,
+        *,
+        session: ArchitectureSession,
+        base_version: int,
+        user_message: str,
+    ) -> StagePatch:
+        context = SocratesReviewContext(
+            session_id=session.session_id,
+            stage_run_id=new_id("stage_run"),
+            base_version=base_version,
+            target_version=base_version + 1,
+            business_need={
+                "raw_input": session.business_need,
+                "latest_user_message": user_message.strip(),
+                "title": session.title,
+            },
+            requirements_summary=self._requirements_summary(session, user_message),
+            architecture_options=self._architecture_options(session, user_message),
+            evaluation_criteria=["reliability", "security", "cost", "delivery"],
+        )
+        review = self.socrates_workflow.run_sync(context)
+        return self.socrates_workflow.build_stage_patch(review, base_version=base_version)
+
+    def _requirements_summary(
+        self,
+        session: ArchitectureSession,
+        user_message: str,
+    ) -> dict:
+        artifact = self.storage.read_latest_artifact(
+            session.session_id,
+            self._stage_value(StageName.REQUIREMENTS_EXTRACTION),
+        )
+        if artifact is not None and artifact.content:
+            return artifact.content
+        return {
+            "summary": user_message.strip() or session.business_need,
+            "source": "session_context",
+        }
+
+    def _architecture_options(
+        self,
+        session: ArchitectureSession,
+        user_message: str,
+    ) -> list[dict]:
+        artifact = self.storage.read_latest_artifact(
+            session.session_id,
+            self._stage_value(StageName.OPTIONS_GENERATION),
+        )
+        if artifact is not None:
+            options = artifact.content.get("options")
+            if isinstance(options, list) and options:
+                return options
+
+        scale = self._scale_target(f"{session.business_need} {user_message}")
+        multi_region = self._is_multi_region(f"{session.business_need} {user_message}")
+        return [
+            {
+                "option_id": "option_event_streaming",
+                "name": "Event Hubs streaming fraud pipeline",
+                "summary": (
+                    "Partitioned event ingestion with real-time scoring and explicit "
+                    "security, operations, and cost controls."
+                ),
+                "capacity_target": scale,
+                "topology": "multi-region active-active" if multi_region else "single-region resilient",
+            }
+        ]
 
     @staticmethod
     def _resolve_active_stage(session: ArchitectureSession) -> StageName:
@@ -486,3 +589,22 @@ class StageController:
     def _is_multi_region(user_message: str) -> bool:
         lowered = user_message.lower()
         return "multi-region" in lowered or "multi region" in lowered or "active-active" in lowered
+
+    @staticmethod
+    def _requested_stage(user_message: str) -> StageName | None:
+        lowered = user_message.lower().replace("-", " ").replace("_", " ")
+        stage_markers: list[tuple[StageName, tuple[str, ...]]] = [
+            (StageName.SOCRATIC_REVIEW, ("socratic review", "socrates", "socratic")),
+            (StageName.EVIDENCE_AUDIT_CHECKPOINT, ("evidence audit checkpoint", "evidence check")),
+            (StageName.FINAL_EVIDENCE_AUDIT, ("final evidence audit", "final audit")),
+            (StageName.REQUIREMENTS_EXTRACTION, ("requirements", "extract requirements")),
+            (StageName.PATTERN_DETECTION, ("pattern detection", "detect pattern", "patterns")),
+            (StageName.OPTIONS_GENERATION, ("options generation", "generate options", "options")),
+            (StageName.ADR_GENERATION, ("adr generation", "generate adr", "adr")),
+            (StageName.HLD_GENERATION, ("hld generation", "generate hld", "hld")),
+            (StageName.MINI_WAF_REVIEW, ("mini waf", "waf review", "waf")),
+        ]
+        for stage, markers in stage_markers:
+            if any(marker in lowered for marker in markers):
+                return stage
+        return None

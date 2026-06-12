@@ -98,7 +98,7 @@ pytest
 Expected result at the time this runbook was written:
 
 ```text
-81 passed, 1 skipped
+84 passed, 1 skipped
 ```
 
 ## 5. Environment Files
@@ -108,6 +108,8 @@ Start from the sample:
 ```bash
 cp .env.example .env
 ```
+
+Local FastAPI and Streamlit runs load `.env` automatically. Edit `.env` for stable local configuration. Use shell `export` only for one-off overrides or values produced during a terminal session, such as a Cosmos endpoint captured from `az`.
 
 For the fastest real-Cosmos path, use:
 
@@ -131,10 +133,6 @@ ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
 FOUNDRY_PROJECT_ENDPOINT=
 DEFAULT_ARCHITECTURE_MODEL=gpt-4.1
 AZURE_OPENAI_ENDPOINT=
-
-COSMOS_ENDPOINT=https://<cosmos-account>.documents.azure.com:443/
-COSMOS_DATABASE_NAME=archimedes
-COSMOS_KEY=
 ```
 
 Notes:
@@ -144,8 +142,8 @@ Notes:
 - `USE_MOCK_KB=true` makes `FoundryIQRetriever` use the fixture-backed mock adapter.
 - `ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false` allows FastAPI to start without `FOUNDRY_PROJECT_ENDPOINT`.
 - FastAPI settings use the `ARCHIMEDES_API_` prefix for app settings such as `ARCHIMEDES_API_VALIDATE_REQUIRED_ENV`.
-- Cosmos endpoint can be supplied as either `ARCHIMEDES_API_COSMOS_ENDPOINT` or `COSMOS_ENDPOINT`.
-- Cosmos database can be supplied as either `ARCHIMEDES_API_COSMOS_DATABASE_NAME` or `COSMOS_DATABASE_NAME`.
+- Cosmos settings are supplied through the same FastAPI settings model: `ARCHIMEDES_API_COSMOS_ENDPOINT`, `ARCHIMEDES_API_COSMOS_DATABASE_NAME`, and optional `ARCHIMEDES_API_COSMOS_KEY`.
+- Environment variables already present in the shell take precedence over values from `.env`.
 
 ## 6. Phase A: Local FastAPI + Streamlit With Real Cosmos
 
@@ -235,24 +233,28 @@ Open terminal 1:
 ```bash
 cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 source .venv/Scripts/activate
-export PYTHONPATH=src
-export USE_MOCK_KB=true
-export ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
-export ARCHIMEDES_API_STORAGE_BACKEND=cosmos
-export ARCHIMEDES_API_COSMOS_ENDPOINT="$cosmosEndpoint"
-export ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
-
-# Use this only if managed identity / Azure CLI auth is not configured.
-# export ARCHIMEDES_API_COSMOS_KEY="$cosmosKey"
 
 python -m uvicorn api.main:app --app-dir src --reload --host 127.0.0.1 --port 8000
+```
+
+Before starting FastAPI, make sure `.env` contains the Cosmos values from section 6.0:
+
+```dotenv
+ARCHIMEDES_API_STORAGE_BACKEND=cosmos
+ARCHIMEDES_API_COSMOS_ENDPOINT=https://<cosmos-account>.documents.azure.com:443/
+ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
+
+# Use this only if managed identity / Azure CLI auth is not configured.
+ARCHIMEDES_API_COSMOS_KEY=
 ```
 
 Validate:
 
 ```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/api/v1/health
+api_url="http://127.0.0.1:8000"
+
+curl "${api_url}/health"
+curl "${api_url}/api/v1/health"
 ```
 
 Expected status:
@@ -275,9 +277,10 @@ Open terminal 2:
 ```bash
 cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 source .venv/Scripts/activate
-export ARCHIMEDES_API_URL=http://127.0.0.1:8000/api/v1
 streamlit run frontend/app.py --server.port 8501
 ```
+
+Streamlit reads `ARCHIMEDES_API_URL` from `.env`. The default value is `http://localhost:8000/api/v1`, which works with the FastAPI command above.
 
 Open:
 
@@ -290,7 +293,9 @@ http://localhost:8501
 Create a session:
 
 ```bash
-session_json=$(curl -sS -X POST http://127.0.0.1:8000/api/v1/sessions \
+api_url="http://127.0.0.1:8000"
+
+session_json=$(curl -sS -X POST "${api_url}/api/v1/sessions" \
   -H "Content-Type: application/json" \
   -d '{
     "business_need": "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability.",
@@ -304,7 +309,7 @@ echo "$session_id"
 Send a message:
 
 ```bash
-curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/messages" \
+curl -sS -X POST "${api_url}/api/v1/sessions/${session_id}/messages" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability."
@@ -314,7 +319,7 @@ curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/messages" 
 Check pipeline:
 
 ```bash
-curl -sS "http://127.0.0.1:8000/api/v1/sessions/${session_id}/pipeline/status"
+curl -sS "${api_url}/api/v1/sessions/${session_id}/pipeline/status"
 ```
 
 Confirm Cosmos persistence:
@@ -364,7 +369,7 @@ Expected highlights:
 Create a diff after a change produced v2:
 
 ```bash
-curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/diffs" \
+curl -sS -X POST "${api_url}/api/v1/sessions/${session_id}/diffs" \
   -H "Content-Type: application/json" \
   -d '{
     "stage": "options_generation",
@@ -376,7 +381,7 @@ curl -sS -X POST "http://127.0.0.1:8000/api/v1/sessions/${session_id}/diffs" \
 List diffs:
 
 ```bash
-curl -sS "http://127.0.0.1:8000/api/v1/sessions/${session_id}/diffs?stage=options_generation"
+curl -sS "${api_url}/api/v1/sessions/${session_id}/diffs?stage=options_generation"
 ```
 
 ## 7. Phase B: Add Azure OpenAI / Foundry IQ Locally
@@ -406,12 +411,12 @@ Minimum resources:
 
 ### 7.3 Azure OpenAI / Foundry Environment
 
-Set local environment variables:
+Set these values in `.env` when moving from mock mode to live Foundry/model calls:
 
-```bash
-export FOUNDRY_PROJECT_ENDPOINT="https://<your-foundry-project-endpoint>"
-export DEFAULT_ARCHITECTURE_MODEL="<your-model-deployment-name>"
-export AZURE_OPENAI_ENDPOINT="https://<your-azure-openai-resource>.openai.azure.com/"
+```dotenv
+FOUNDRY_PROJECT_ENDPOINT=https://<your-foundry-project-endpoint>
+DEFAULT_ARCHITECTURE_MODEL=<your-model-deployment-name>
+AZURE_OPENAI_ENDPOINT=https://<your-azure-openai-resource>.openai.azure.com/
 ```
 
 The current lightweight Foundry client uses:
@@ -431,25 +436,25 @@ pip install azure-identity
 
 Mock mode:
 
-```bash
-export USE_MOCK_KB=true
+```dotenv
+USE_MOCK_KB=true
 ```
 
 Real retrieval mode:
 
-```bash
-export USE_MOCK_KB=false
-export ARCH_SEARCH_ENDPOINT="https://<search-service>.search.windows.net"
-export ARCH_SEARCH_API_KEY="<search-api-key>"
-export ARCH_KB_INDEX=archimedes-arch-idx
-export ARCH_KB_NAME=azure-architecture-kb
-export ARCH_KB_VERSION=v1
+```dotenv
+USE_MOCK_KB=false
+ARCH_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
+ARCH_SEARCH_API_KEY=<search-api-key>
+ARCH_KB_INDEX=archimedes-arch-idx
+ARCH_KB_NAME=azure-architecture-kb
+ARCH_KB_VERSION=v1
 ```
 
 Alternative endpoint variable:
 
-```bash
-export ARCH_SEARCH_SERVICE_NAME="<search-service-name>"
+```dotenv
+ARCH_SEARCH_SERVICE_NAME=<search-service-name>
 ```
 
 Use either `ARCH_SEARCH_ENDPOINT` or `ARCH_SEARCH_SERVICE_NAME`.
@@ -612,9 +617,10 @@ curl "https://${apiFqdn}/api/v1/health"
 ```bash
 cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 source .venv/Scripts/activate
-export ARCHIMEDES_API_URL="https://${apiFqdn}/api/v1"
 streamlit run frontend/app.py --server.port 8501
 ```
+
+For this hosted-backend path, set `ARCHIMEDES_API_URL=https://${apiFqdn}/api/v1` in `.env` before starting Streamlit.
 
 ## 9. Phase D: Demo Deployment
 
@@ -656,8 +662,13 @@ ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 
 Option 1: Keep Streamlit local for the demo:
 
+```dotenv
+ARCHIMEDES_API_URL=https://<hosted-api-fqdn>/api/v1
+```
+
+Then run:
+
 ```bash
-export ARCHIMEDES_API_URL="https://${apiFqdn}/api/v1"
 streamlit run frontend/app.py --server.port 8501
 ```
 
@@ -789,14 +800,14 @@ GET  /api/v1/sessions/{session_id}/diffs/{diff_id}
 
 For local mock mode:
 
-```bash
-export ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
+```dotenv
+ARCHIMEDES_API_VALIDATE_REQUIRED_ENV=false
 ```
 
 For Azure-backed mode:
 
-```bash
-export FOUNDRY_PROJECT_ENDPOINT="https://<your-foundry-project-endpoint>"
+```dotenv
+FOUNDRY_PROJECT_ENDPOINT=https://<your-foundry-project-endpoint>
 ```
 
 ### FastAPI fails while connecting to Cosmos
@@ -819,8 +830,8 @@ ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 
 If RBAC / `DefaultAzureCredential` is not ready, use key auth:
 
-```bash
-export ARCHIMEDES_API_COSMOS_KEY="$cosmosKey"
+```dotenv
+ARCHIMEDES_API_COSMOS_KEY=<cosmos-key>
 ```
 
 If the SDK is missing:
@@ -835,13 +846,13 @@ Check:
 
 ```bash
 echo "$ARCHIMEDES_API_URL"
-curl http://127.0.0.1:8000/api/v1/health
+curl "${ARCHIMEDES_API_URL}/health"
 ```
 
 Set:
 
-```bash
-export ARCHIMEDES_API_URL=http://127.0.0.1:8000/api/v1
+```dotenv
+ARCHIMEDES_API_URL=http://127.0.0.1:8000/api/v1
 ```
 
 ### Pattern detection fails
@@ -852,7 +863,13 @@ The deterministic pattern detector needs signal words. For the fraud demo, use:
 real-time stream event latency tps fraud pattern detection
 ```
 
-### Port already in use
+### Port already in use or `WinError 10013`
+
+On Windows, Uvicorn can report this when the requested port is already owned by another process:
+
+```text
+[WinError 10013] An attempt was made to access a socket in a way forbidden by its access permissions
+```
 
 Find processes:
 
@@ -861,13 +878,16 @@ netstat -ano | grep ':8000'
 netstat -ano | grep ':8501'
 ```
 
+The last column is the process ID. If it is an old local server, stop that terminal or end the process from Task Manager.
+
 Use another port:
 
 ```bash
 python -m uvicorn api.main:app --app-dir src --reload --port 8010
-export ARCHIMEDES_API_URL=http://127.0.0.1:8010/api/v1
 streamlit run frontend/app.py --server.port 8502
 ```
+
+When using a different FastAPI port, update `ARCHIMEDES_API_URL` in `.env` before starting Streamlit.
 
 ### Real KB retrieval fails
 
@@ -883,8 +903,8 @@ echo "$ARCH_KB_INDEX"
 
 Fallback:
 
-```bash
-export USE_MOCK_KB=true
+```dotenv
+USE_MOCK_KB=true
 ```
 
 ### Container Apps source deployment fails

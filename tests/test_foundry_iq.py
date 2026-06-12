@@ -12,6 +12,7 @@ from archimedes.tools.foundry_iq import (
 
 
 REQUIRED_ENV_VARS = ("ARCH_SEARCH_API_KEY",)
+REQUIRED_ENDPOINT_ENV_VARS = ("ARCH_SEARCH_ENDPOINT", "ARCH_SEARCH_SERVICE_NAME")
 
 TEST_QUERIES = [
     "real-time streaming reference architecture on Azure",
@@ -40,7 +41,12 @@ def _has_relevance_overlap(query: str, top_item: dict) -> bool:
 
 @pytest.mark.integration
 def test_knowledge_base_retrieve_end_to_end_and_parseable():
+    if os.getenv("USE_MOCK_KB", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        pytest.skip("Skipping live KB integration test while USE_MOCK_KB=true.")
+
     missing = [env_name for env_name in REQUIRED_ENV_VARS if not os.getenv(env_name)]
+    if not any(os.getenv(env_name) for env_name in REQUIRED_ENDPOINT_ENV_VARS):
+        missing.append("ARCH_SEARCH_ENDPOINT or ARCH_SEARCH_SERVICE_NAME")
     if missing:
         pytest.skip(f"Missing env vars for integration test: {', '.join(missing)}")
 

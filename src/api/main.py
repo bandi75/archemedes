@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from archimedes.orchestrator.controller import StageController
@@ -17,6 +18,8 @@ from archimedes.state.state_manager import ArchitectureStateManager
 
 from .routers import artifacts, changes, diffs, evidence, sessions
 from .storage import InMemoryArchimedesStorage
+
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -58,36 +61,24 @@ def _build_storage(settings: Settings):
     if settings.storage_backend.strip().lower() != "cosmos":
         return InMemoryArchimedesStorage()
 
-    endpoint = (
-        settings.cosmos_endpoint
-        or os.getenv("COSMOS_ENDPOINT")
-        or os.getenv("AZURE_COSMOS_ENDPOINT")
-    )
-    database_name = (
-        settings.cosmos_database_name
-        or os.getenv("COSMOS_DATABASE_NAME")
-        or os.getenv("COSMOS_DATABASE")
-        or "archimedes"
-    )
-    key = settings.cosmos_key or os.getenv("COSMOS_KEY") or os.getenv("AZURE_COSMOS_KEY")
-    if not endpoint:
-        raise RuntimeError("Missing Cosmos endpoint. Set ARCHIMEDES_API_COSMOS_ENDPOINT or COSMOS_ENDPOINT.")
+    if not settings.cosmos_endpoint:
+        raise RuntimeError("Missing Cosmos endpoint. Set ARCHIMEDES_API_COSMOS_ENDPOINT.")
 
     try:
         from azure.cosmos import CosmosClient
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("azure-cosmos is required when ARCHIMEDES_API_STORAGE_BACKEND=cosmos.") from exc
 
-    if key:
-        client = CosmosClient(endpoint, credential=key)
+    if settings.cosmos_key:
+        client = CosmosClient(settings.cosmos_endpoint, credential=settings.cosmos_key)
     else:
         try:
             from azure.identity import DefaultAzureCredential
         except Exception as exc:  # pragma: no cover
             raise RuntimeError("azure-identity is required for Cosmos managed identity authentication.") from exc
-        client = CosmosClient(endpoint, credential=DefaultAzureCredential())
+        client = CosmosClient(settings.cosmos_endpoint, credential=DefaultAzureCredential())
 
-    database = client.create_database_if_not_exists(id=database_name)
+    database = client.create_database_if_not_exists(id=settings.cosmos_database_name)
     CosmosStorageClient.ensure_containers(database)
     return CosmosStorageClient.from_database(database)
 

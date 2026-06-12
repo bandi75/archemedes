@@ -9,6 +9,11 @@ from archimedes.models.socrates import SocratesReviewContext
 from archimedes.socrates.workflow import build_socrates_workflow
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 def _context(depth: SocratesDepth = SocratesDepth.STANDARD) -> SocratesReviewContext:
     return SocratesReviewContext(
         session_id="session_socrates_test",
@@ -104,3 +109,12 @@ def test_socrates_review_can_be_wrapped_as_stage_patch():
     assert patch.target_version == 1
     assert patch.patch["socratic_review"]["synthesis"]["recommended_option_id"] == "OPT-A"
     assert patch.quality_gate_result.status == QualityGateStatus.PASSED
+
+
+@pytest.mark.anyio
+async def test_socrates_run_sync_can_be_called_inside_running_event_loop():
+    workflow = build_socrates_workflow("standard")
+
+    review = workflow.run_sync(_context())
+
+    assert review.synthesis.recommended_option_id == "OPT-A"

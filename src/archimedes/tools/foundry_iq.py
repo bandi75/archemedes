@@ -4,8 +4,11 @@ import os
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 from archimedes.models.evidence import EvidenceSource
+
+load_dotenv()
 
 
 def _use_mock_kb() -> bool:

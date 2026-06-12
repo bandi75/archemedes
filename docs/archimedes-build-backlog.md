@@ -284,7 +284,7 @@ _Goal: FastAPI application running locally with all session, pipeline, artifact,
 
 **P2.5-T01 — FastAPI App Skeleton**
 - `05-api-contracts.md` §3 has the base URL and versioning strategy: `/api/v1/...`. All routers are mounted under this prefix.
-- Lifespan handler checks for: `FOUNDRY_PROJECT_ENDPOINT`, `COSMOS_ENDPOINT`, `AZURE_OPENAI_ENDPOINT`. If any are missing and `USE_MOCK_KB=false`, log a warning but do not crash — allow mock mode to work without all vars.
+- Lifespan handler checks for `FOUNDRY_PROJECT_ENDPOINT` and reads Cosmos settings through the `Settings` model, including `ARCHIMEDES_API_COSMOS_ENDPOINT`. If required external-service config is missing and `USE_MOCK_KB=false`, log a warning but do not crash — allow mock mode to work without all vars.
 - Include `GET /health` returning `{"status": "ok", "version": "2.2", "mock_mode": bool}`.
 
 **P2.5-T02 — Session + Message Endpoints**

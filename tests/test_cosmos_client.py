@@ -37,14 +37,14 @@ class FakeContainer:
         if key not in self._items:
             raise FakeCosmosHttpError(404)
         entry = self._items[key]
-        return {**entry.body, "_etag": f'"{entry.etag}"'}
+        return _with_cosmos_metadata(entry.body, entry.etag)
 
     def create_item(self, body: dict[str, Any]) -> dict[str, Any]:
         key = (body["session_id"], body["id"])
         if key in self._items:
             raise FakeCosmosHttpError(409)
         self._items[key] = _Entry(body=body.copy(), etag=1)
-        return {**body, "_etag": '"1"'}
+        return _with_cosmos_metadata(body, 1)
 
     def replace_item(
         self,
@@ -69,7 +69,7 @@ class FakeContainer:
 
         new_etag = current.etag + 1
         self._items[key] = _Entry(body=body.copy(), etag=new_etag)
-        return {**body, "_etag": f'"{new_etag}"'}
+        return _with_cosmos_metadata(body, new_etag)
 
     def query_items(
         self,
@@ -108,6 +108,17 @@ class FakeDatabase:
     def create_container_if_not_exists(self, *, id: str, partition_key: Any) -> dict[str, Any]:
         self.created_containers.append(id)
         return {"id": id, "partition_key": partition_key}
+
+
+def _with_cosmos_metadata(body: dict[str, Any], etag: int) -> dict[str, Any]:
+    return {
+        **body,
+        "_etag": f'"{etag}"',
+        "_rid": "resource-id",
+        "_self": "dbs/db/colls/container/docs/doc/",
+        "_attachments": "attachments/",
+        "_ts": 1781196413,
+    }
 
 
 def _passed_gate() -> QualityGateResult:
@@ -157,6 +168,27 @@ def test_upsert_artifact_and_read_latest_artifact():
     assert newer.version == 2
     assert latest is not None
     assert latest.version == 2
+
+
+def test_upsert_artifact_strips_storage_metadata_from_model_result():
+    db = FakeDatabase()
+    client = CosmosStorageClient.from_database(db)
+    artifact = _artifact(session_id="session_metadata", version=1)
+
+    saved = client.upsert_artifact(
+        artifact,
+        idempotency_key="idem-metadata",
+        patch_id="patch-metadata",
+    )
+    found = client.find_by_idempotency_key(
+        session_id=artifact.session_id,
+        key="idem-metadata",
+    )
+
+    assert saved.artifact_id == artifact.artifact_id
+    assert found is not None
+    assert found["idempotency_key"] == "idem-metadata"
+    assert found["patch_id"] == "patch-metadata"
 
 
 def test_read_artifact_version_returns_exact_version():

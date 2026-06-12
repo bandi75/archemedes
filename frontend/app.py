@@ -66,6 +66,7 @@ def _ensure_state() -> None:
         "artifacts": {},
         "last_error": None,
         "debug": False,
+        "show_new_session_form": False,
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -88,13 +89,18 @@ def _render_header(client: ArchimedesApiClient) -> None:
 def _render_sidebar(client: ArchimedesApiClient) -> None:
     with st.sidebar:
         st.header("Session")
-        if st.button("New session", use_container_width=True):
+        if st.button("New session", width="stretch"):
             _reset_session()
+            st.session_state.show_new_session_form = True
             st.rerun()
 
-        if st.button("Load demo scenario", use_container_width=True):
+        if st.session_state.show_new_session_form:
+            _render_new_session_form(client)
+
+        if st.button("Load demo scenario", width="stretch"):
             _create_session(client, DEMO_NEED, title="Fintech fraud detection demo", domain="fintech")
             st.session_state.messages.append({"role": "user", "content": DEMO_NEED})
+            st.session_state.show_new_session_form = False
             st.rerun()
 
         st.session_state.debug = st.toggle("Debug JSON", value=st.session_state.debug)
@@ -104,8 +110,8 @@ def _render_sidebar(client: ArchimedesApiClient) -> None:
         st.divider()
         _render_timeline()
 
-        if st.button("Refresh status", use_container_width=True, disabled=not st.session_state.session_id):
-            _refresh_all(client)
+        if st.button("Refresh status", width="stretch", disabled=not st.session_state.session_id):
+            _refresh_session_state(client)
             st.rerun()
 
 
@@ -138,6 +144,34 @@ def _render_timeline() -> None:
         st.markdown(line)
 
 
+def _render_new_session_form(client: ArchimedesApiClient) -> None:
+    with st.form("new_session_form", clear_on_submit=False):
+        business_need = st.text_area(
+            "Business need",
+            placeholder="Describe the architecture problem to start a session",
+            height=120,
+        )
+        title = st.text_input("Title", placeholder="Optional session title")
+        submitted = st.form_submit_button("Create session", width="stretch")
+
+    if not submitted:
+        return
+
+    if not business_need.strip():
+        st.session_state.last_error = "Business need is required to create a session."
+        return
+
+    _create_session(
+        client,
+        business_need.strip(),
+        title=title.strip() or _derive_title(business_need),
+    )
+    if st.session_state.session_id:
+        st.session_state.messages.append({"role": "user", "content": business_need.strip()})
+        st.session_state.show_new_session_form = False
+        st.rerun()
+
+
 def _render_chat_panel(client: ArchimedesApiClient) -> None:
     st.subheader("Chat")
     for message in st.session_state.messages:
@@ -148,6 +182,8 @@ def _render_chat_panel(client: ArchimedesApiClient) -> None:
     if prompt:
         if not st.session_state.session_id:
             _create_session(client, prompt, title=_derive_title(prompt))
+            if not st.session_state.session_id:
+                st.rerun()
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.spinner("Archimedes is working through the current stage..."):
             _send_message(client, prompt)
@@ -187,6 +223,9 @@ def _render_artifact_tabs(client: ArchimedesApiClient) -> None:
     tabs = st.tabs(labels)
     for tab, (stage, _label) in zip(tabs, ARTIFACT_STAGES):
         with tab:
+            if not _stage_has_artifact(stage):
+                st.caption("No artifact yet.")
+                continue
             artifact = _load_artifact(client, stage)
             if not artifact:
                 st.caption("No artifact yet.")
@@ -226,6 +265,17 @@ def _render_socrates_view() -> None:
 def _render_socratic_artifact(content: dict[str, Any]) -> None:
     review = content.get("socratic_review", content)
     synthesis = review.get("synthesis", {}) if isinstance(review, dict) else {}
+    persona_analyses = review.get("persona_analyses", []) if isinstance(review, dict) else []
+    if not synthesis and not persona_analyses:
+        summary = review.get("summary") if isinstance(review, dict) else None
+        if summary:
+            st.markdown(str(summary))
+        if isinstance(review, dict):
+            st.json(review)
+        else:
+            st.write(review)
+        return
+
     if synthesis:
         st.metric("Recommended option", synthesis.get("recommended_option_id") or "Pending")
         st.progress(float(synthesis.get("confidence") or 0.0))
@@ -239,7 +289,7 @@ def _render_socratic_artifact(content: dict[str, Any]) -> None:
             st.markdown("**Pre-mortem**")
             for item in synthesis.get("premortem_scenarios", []):
                 st.write(f"- {item}")
-    for analysis in review.get("persona_analyses", []):
+    for analysis in persona_analyses:
         with st.expander(str(analysis.get("persona", "Persona"))):
             st.write(analysis.get("summary", ""))
             for finding in analysis.get("findings", []):
@@ -264,12 +314,15 @@ def _render_evidence_view(client: ArchimedesApiClient) -> None:
     if not st.session_state.session_id:
         st.caption("No evidence yet.")
         return
+    if not _has_any_artifact():
+        st.caption("Evidence will appear after the first pipeline stage completes.")
+        return
     claims = _safe_call(lambda: client.get_claims(st.session_state.session_id), default={"items": []})
     evidence = _safe_call(lambda: client.get_evidence(st.session_state.session_id), default={"items": []})
     st.markdown("**Claims**")
-    st.dataframe(claims.get("items", []), use_container_width=True)
+    st.dataframe(claims.get("items", []), width="stretch")
     st.markdown("**Evidence**")
-    st.dataframe(evidence.get("items", []), use_container_width=True)
+    st.dataframe(evidence.get("items", []), width="stretch")
 
 
 def _render_diff_view(client: ArchimedesApiClient) -> None:
@@ -282,7 +335,7 @@ def _render_diff_view(client: ArchimedesApiClient) -> None:
         v1 = st.number_input("Before version", min_value=1, value=1, step=1)
     with right:
         v2 = st.number_input("After version", min_value=1, value=2, step=1)
-    if st.button("Load diff", use_container_width=True):
+    if st.button("Load diff", width="stretch"):
         diff = client.get_artifact_diff(st.session_state.session_id, stage, int(v1), int(v2))
         st.session_state["last_diff"] = diff
     diff = st.session_state.get("last_diff")
@@ -348,7 +401,7 @@ def _create_session(client: ArchimedesApiClient, business_need: str, *, title: s
         st.session_state.session_id = session["session_id"]
         st.session_state.session = session
         st.session_state.last_error = None
-        _refresh_all(client)
+        _refresh_session_state(client)
     except ArchimedesApiError as exc:
         st.session_state.last_error = exc.detail
 
@@ -381,12 +434,25 @@ def _format_orchestrator_response(response: dict[str, Any]) -> str:
 
 
 def _refresh_all(client: ArchimedesApiClient) -> None:
+    _refresh_session_state(client)
+    _refresh_available_artifacts(client)
+
+
+def _refresh_session_state(client: ArchimedesApiClient) -> None:
     session_id = st.session_state.session_id
     if not session_id:
         return
     st.session_state.session = _safe_call(lambda: client.get_session(session_id), default=st.session_state.session)
     st.session_state.pipeline = _safe_call(lambda: client.get_pipeline_status(session_id), default={"stages": []})
+
+
+def _refresh_available_artifacts(client: ArchimedesApiClient) -> None:
+    session_id = st.session_state.session_id
+    if not session_id:
+        return
     for stage, _label in ARTIFACT_STAGES:
+        if not _stage_has_artifact(stage):
+            continue
         artifact = client.get_latest_artifact(session_id, stage)
         if artifact:
             st.session_state.artifacts[stage] = artifact
@@ -398,10 +464,30 @@ def _load_artifact(client: ArchimedesApiClient, stage: str) -> dict[str, Any] | 
         return cached
     if not st.session_state.session_id:
         return None
+    if not _stage_has_artifact(stage):
+        return None
     artifact = client.get_latest_artifact(st.session_state.session_id, stage)
     if artifact:
         st.session_state.artifacts[stage] = artifact
     return artifact
+
+
+def _pipeline_stage_versions() -> dict[str, int]:
+    versions: dict[str, int] = {}
+    for item in st.session_state.pipeline.get("stages", []):
+        stage = item.get("stage")
+        version = item.get("artifact_version")
+        if stage and version:
+            versions[str(stage)] = int(version)
+    return versions
+
+
+def _stage_has_artifact(stage: str) -> bool:
+    return stage in _pipeline_stage_versions()
+
+
+def _has_any_artifact() -> bool:
+    return bool(_pipeline_stage_versions())
 
 
 def _safe_call(func, *, default):
@@ -423,7 +509,14 @@ def _idempotency_key(prompt: str) -> str:
 
 
 def _reset_session() -> None:
-    for key in ["session_id", "session", "pipeline", "artifacts", "last_error", "last_diff"]:
+    for key in [
+        "session_id",
+        "session",
+        "pipeline",
+        "artifacts",
+        "last_error",
+        "last_diff",
+    ]:
         st.session_state.pop(key, None)
     st.session_state.messages = []
     _ensure_state()

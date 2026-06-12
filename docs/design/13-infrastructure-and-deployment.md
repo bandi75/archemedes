@@ -415,8 +415,8 @@ CMD ["streamlit", "run", "apps/ui/app.py", "--server.port=8501", "--server.addre
 | `FOUNDRY_MODEL_DEPLOYMENT` | Yes | Model deployment name |
 | `FOUNDRY_IQ_MCP_ENDPOINT` | Yes | Knowledge base MCP endpoint |
 | `FOUNDRY_IQ_CONNECTION_NAME` | Yes | Project connection name |
-| `COSMOS_ENDPOINT` | Yes | Cosmos DB endpoint |
-| `COSMOS_DATABASE_NAME` | Yes | Database name, e.g. `archimedes` |
+| `ARCHIMEDES_API_COSMOS_ENDPOINT` | Yes | Cosmos DB endpoint |
+| `ARCHIMEDES_API_COSMOS_DATABASE_NAME` | Yes | Database name, e.g. `archimedes` |
 | `STORAGE_ACCOUNT_URL` | Yes | Blob service URL |
 | `ARTIFACT_CONTAINER_NAME` | Yes | Blob container for large artifacts |
 | `KEY_VAULT_URL` | Recommended | Key Vault URL |
@@ -1073,8 +1073,8 @@ API_BASE_URL=http://localhost:8000
 FOUNDRY_PROJECT_ENDPOINT=https://...
 FOUNDRY_MODEL_DEPLOYMENT=gpt-4.1
 FOUNDRY_IQ_MCP_ENDPOINT=https://...
-COSMOS_ENDPOINT=https://...
-COSMOS_DATABASE_NAME=archimedes
+ARCHIMEDES_API_COSMOS_ENDPOINT=https://...
+ARCHIMEDES_API_COSMOS_DATABASE_NAME=archimedes
 STORAGE_ACCOUNT_URL=https://...
 ARTIFACT_CONTAINER_NAME=artifacts-full
 APPLICATIONINSIGHTS_CONNECTION_STRING=...

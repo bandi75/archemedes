@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+try:
+    from azure.core import MatchConditions
+
+    IF_NOT_MODIFIED = MatchConditions.IfNotModified
+except Exception:  # pragma: no cover - fallback for environments without azure-core
+    IF_NOT_MODIFIED = "IfNotModified"
+
 from archimedes.models.artifacts import VersionedArtifact
 from archimedes.models.change import ChangeEvent
 from archimedes.models.claims import ClaimRecord
@@ -380,7 +387,7 @@ class CosmosStorageClient:
                     item=item_id,
                     body=payload,
                     etag=etag,
-                    match_condition="IfNotModified",
+                    match_condition=IF_NOT_MODIFIED,
                 )
             except Exception as exc:  # pragma: no cover - branch exercised by unit fakes
                 if self._is_precondition_failed(exc) and attempts <= self.max_write_retries:
@@ -427,9 +434,14 @@ class CosmosStorageClient:
 
     @staticmethod
     def _clean_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        clean = payload.copy()
+        clean = {
+            key: value
+            for key, value in payload.items()
+            if not key.startswith("_")
+        }
         clean.pop("id", None)
-        clean.pop("_etag", None)
+        clean.pop("idempotency_key", None)
+        clean.pop("patch_id", None)
         return clean
 
     @staticmethod
