@@ -9,3 +9,4 @@ pytest
 azure-cosmos
 azure-identity
 azure-ai-inference
+openai

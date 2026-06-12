@@ -47,7 +47,7 @@ async def create_session(
 
 
 @router.post("/{session_id}/messages")
-async def post_message(
+def post_message(
     session_id: str,
     request: MessageRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),

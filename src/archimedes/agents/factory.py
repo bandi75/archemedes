@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from pydantic import BaseModel
+
 from archimedes.agents.client import FoundryChatClient, create_foundry_chat_client
+from archimedes.agents.schemas import AGENT_OUTPUT_SCHEMAS
 from archimedes.models.base import new_id
 from archimedes.models.claims import ClaimRecord
 from archimedes.models.enums import ClaimType, QualityGateStatus, StageName
@@ -20,12 +23,15 @@ from archimedes.tools.foundry_iq import FoundryIQRetriever
 
 AgentTool = Callable[..., Any]
 
-# JSON schemas exposed to the LLM for each callable tool
+# JSON schemas exposed to the LLM for each callable tool.
+# strict=true is required by beta.chat.completions.parse(); it enforces
+# additionalProperties:false and all properties listed in "required".
 _TOOL_SCHEMAS: dict[str, dict] = {
     "foundry_iq_retrieve": {
         "type": "function",
         "function": {
             "name": "foundry_iq_retrieve",
+            "strict": True,
             "description": (
                 "Retrieve relevant architecture reference chunks from Azure AI Search. "
                 "Use this to ground your response with patterns, service guidance, and NFR benchmarks."
@@ -38,12 +44,12 @@ _TOOL_SCHEMAS: dict[str, dict] = {
                         "description": "Search query targeting architecture patterns, Azure services, or NFRs.",
                     },
                     "top_k": {
-                        "type": "integer",
-                        "description": "Maximum number of results to return (default 5).",
-                        "default": 5,
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        "description": "Maximum number of results to return. Pass null to use the default of 5.",
                     },
                 },
-                "required": ["query"],
+                "required": ["query", "top_k"],
+                "additionalProperties": False,
             },
         },
     },
@@ -51,6 +57,7 @@ _TOOL_SCHEMAS: dict[str, dict] = {
         "type": "function",
         "function": {
             "name": "evaluate_quality_gate",
+            "strict": True,
             "description": "Evaluate quality gate checks for the current pipeline stage.",
             "parameters": {
                 "type": "object",
@@ -60,27 +67,16 @@ _TOOL_SCHEMAS: dict[str, dict] = {
                         "description": "Pipeline stage name (e.g. 'requirements_extraction').",
                     },
                     "checklist_results": {
-                        "type": "object",
+                        "type": "string",
                         "description": (
-                            "Map of check_id to either a boolean or "
-                            "{passed: bool, message: str}."
+                            "JSON-encoded map of check_id to boolean or "
+                            "{\"passed\": bool, \"message\": str}. "
+                            "Example: '{\"scale_defined\": true, \"latency_defined\": false}'"
                         ),
-                        "additionalProperties": {
-                            "oneOf": [
-                                {"type": "boolean"},
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "passed": {"type": "boolean"},
-                                        "message": {"type": "string"},
-                                    },
-                                    "required": ["passed"],
-                                },
-                            ]
-                        },
                     },
                 },
                 "required": ["stage", "checklist_results"],
+                "additionalProperties": False,
             },
         },
     },
@@ -93,6 +89,7 @@ class AgentDefinition:
     instructions: str
     tools: dict[str, AgentTool]
     client: FoundryChatClient
+    output_schema: type[BaseModel] | None = None
 
 
 class AgentFactory:
@@ -139,6 +136,7 @@ class AgentFactory:
             instructions=instructions,
             tools=tools,
             client=self.client,
+            output_schema=AGENT_OUTPUT_SCHEMAS.get(name),
         )
         self._cache[name] = agent
         return agent
@@ -153,27 +151,40 @@ class AgentFactory:
         user_message: str,
     ) -> StagePatch:
         """Run a specialist agent for a pipeline stage and return the resulting StagePatch."""
-        from azure.ai.inference.models import AssistantMessage, SystemMessage, ToolMessage, UserMessage
-
         agent = self.get_agent(agent_name)
         tool_defs = [_TOOL_SCHEMAS[name] for name in agent.tools if name in _TOOL_SCHEMAS]
 
         messages: list = [
-            SystemMessage(content=agent.instructions),
-            UserMessage(content=user_message),
+            {"role": "system", "content": agent.instructions},
+            {"role": "user", "content": user_message},
         ]
         collected_evidence: list[EvidenceSource] = []
         quality_gate: QualityGateResult | None = None
         reply = None
 
         while True:
-            response = agent.client.complete(messages, tools=tool_defs or None)
+            response = agent.client.complete(
+                messages,
+                tools=tool_defs or None,
+                response_format=agent.output_schema,
+            )
             reply = response.choices[0].message
 
             if not reply.tool_calls:
                 break
 
-            messages.append(AssistantMessage(tool_calls=reply.tool_calls))
+            messages.append({
+                "role": "assistant",
+                "content": reply.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in reply.tool_calls
+                ],
+            })
             for tc in reply.tool_calls:
                 fn_name = tc.function.name
                 fn = agent.tools.get(fn_name)
@@ -183,23 +194,38 @@ class AgentFactory:
                     args = json.loads(tc.function.arguments or "{}")
                     if fn_name == "foundry_iq_retrieve":
                         args.setdefault("session_id", session_id)
+                        # top_k may be null from strict-mode schema — fall back to default.
+                        if args.get("top_k") is None:
+                            args.pop("top_k", None)
                         evidence_items: list[EvidenceSource] = fn(**args)
                         collected_evidence.extend(evidence_items)
                         result_str = json.dumps([e.model_dump(mode="json") for e in evidence_items])
                     elif fn_name == "evaluate_quality_gate":
+                        # checklist_results arrives as a JSON string in strict-mode tools.
+                        raw = args.get("checklist_results", "{}")
+                        if isinstance(raw, str):
+                            try:
+                                args["checklist_results"] = json.loads(raw)
+                            except json.JSONDecodeError:
+                                args["checklist_results"] = {}
                         gate_result = fn(**args)
                         quality_gate = gate_result
                         result_str = json.dumps(gate_result.model_dump(mode="json"))
                     else:
                         raw = fn(**args)
                         result_str = json.dumps(raw) if not isinstance(raw, str) else raw
-                messages.append(ToolMessage(tool_call_id=tc.id, content=result_str))
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
 
-        content = (reply.content if reply is not None else None) or "{}"
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError:
-            payload = {"content": content}
+        # Use the schema-parsed Pydantic object when available (structured output),
+        # otherwise fall back to parsing the raw content string.
+        if reply is not None and getattr(reply, "parsed", None) is not None:
+            payload = reply.parsed.model_dump(mode="json")
+        else:
+            content = (reply.content if reply is not None else None) or "{}"
+            try:
+                payload = json.loads(content)
+            except json.JSONDecodeError:
+                payload = {"content": content}
 
         patch_hash = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()

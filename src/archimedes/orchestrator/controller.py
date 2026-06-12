@@ -30,6 +30,25 @@ from archimedes.state.state_manager import ArchitectureStateManager
 
 logger = logging.getLogger(__name__)
 
+# Primary input artifact each stage should receive as context.
+_STAGE_CONTEXT_ARTIFACT: dict[StageName, StageName] = {
+    StageName.REQUIREMENTS_EXTRACTION: StageName.INTAKE,
+    StageName.PATTERN_DETECTION: StageName.REQUIREMENTS_EXTRACTION,
+    StageName.OPTIONS_GENERATION: StageName.REQUIREMENTS_EXTRACTION,
+    StageName.ADR_GENERATION: StageName.OPTIONS_GENERATION,
+    StageName.HLD_GENERATION: StageName.ADR_GENERATION,
+    StageName.MINI_WAF_REVIEW: StageName.HLD_GENERATION,
+}
+
+# Stages that run automatically (no user confirmation gate after completion).
+# All other stages pause and ask the user to review before proceeding.
+_NON_GATE_STAGES: frozenset[StageName] = frozenset({
+    StageName.PATTERN_DETECTION,
+    StageName.SOCRATIC_REVIEW,
+    StageName.EVIDENCE_AUDIT_CHECKPOINT,
+    StageName.FINAL_EVIDENCE_AUDIT,
+})
+
 PIPELINE_ORDER: list[StageName] = [
     StageName.INTAKE,
     StageName.REQUIREMENTS_EXTRACTION,
@@ -98,6 +117,7 @@ class StageController:
 
         logger.info("[controller] process_message session=%s stage=%s", session_id, session.current_stage)
 
+        # --- Requirement change detection ---
         changes = detect_requirement_changes(user_message)
         if changes:
             logger.info("[controller] requirement change detected fields=%s — re-running impacted stages",
@@ -120,6 +140,11 @@ class StageController:
             event.stable_stages = impact.stable_stages
             self.storage.append_change_event(event)
 
+            # Clear any active gate so re-run takes effect cleanly.
+            session.awaiting_stage_confirmation = False
+            session.pending_next_stage = None
+            self.storage.upsert_session(session)
+
             artifacts_produced = self.rerun_impacted_stages(
                 session_id=session_id,
                 user_message=user_message,
@@ -133,7 +158,7 @@ class StageController:
                 artifacts_produced=artifacts_produced,
                 next_prompt_for_user=(
                     "Requirement change detected. Re-ran impacted stages: "
-                    f"{', '.join(self._stage_value(stage) for stage in event.impacted_stages)}"
+                    f"{', '.join(self._stage_value(s) for s in event.impacted_stages)}"
                 ),
                 requires_user_action=False,
                 change_detected=True,
@@ -143,6 +168,83 @@ class StageController:
 
         stage = self._resolve_active_stage(session)
         logger.info("[controller] active_stage=%s", stage)
+
+        # --- Stage confirmation gate ---
+        if session.awaiting_stage_confirmation and session.pending_next_stage is not None:
+            pending = session.pending_next_stage
+
+            if self._is_proceed_signal(user_message):
+                logger.info("[controller] proceed confirmed — advancing to stage=%s", pending)
+                session.awaiting_stage_confirmation = False
+                session.pending_next_stage = None
+                session.current_stage = pending
+                self.storage.upsert_session(session)
+                return self._run_from_stage(session_id, pending, user_message, idempotency_key)
+            else:
+                # User provided refinement context.
+                # Pass the current artifact content so the agent sees its own prior output
+                # (e.g. its clarifying questions) alongside the user's new answers.
+                logger.info("[controller] refinement for stage=%s", stage)
+                stage_key = self._stage_value(stage)
+                current_artifact = self.storage.read_latest_artifact(session_id, stage_key)
+                if current_artifact and current_artifact.content:
+                    current_text = json.dumps(current_artifact.content, indent=2)
+                    enriched = (
+                        f"Refine the following {stage_key} artifact based on the user's additional input.\n\n"
+                        f"Current artifact:\n{current_text}\n\n"
+                        f"User input:\n{user_message}"
+                    )
+                else:
+                    enriched = user_message
+
+                apply_result = self._execute_stage(session, stage, enriched, idempotency_key=idempotency_key)
+                if not apply_result.applied:
+                    return OrchestratorResponse(
+                        current_stage=stage,
+                        stage_status="failed",
+                        artifacts_produced=[],
+                        next_prompt_for_user=f"Stage refinement failed: {apply_result.reason}",
+                        requires_user_action=True,
+                    )
+
+                # Re-read session (state_manager wrote it) and restore gate.
+                session = self.storage.read_session(session_id) or session
+                session.awaiting_stage_confirmation = True
+                session.pending_next_stage = pending
+                self.storage.upsert_session(session)
+
+                logger.info("[controller] stage=%s refined v%s", stage, apply_result.version)
+                return OrchestratorResponse(
+                    current_stage=stage,
+                    stage_status="refined",
+                    artifacts_produced=[f"{stage_key}:v{apply_result.version}"],
+                    next_prompt_for_user=(
+                        f"Stage '{stage_key}' updated. Review the artifact above, then reply "
+                        f"'proceed' to continue to '{self._stage_value(pending)}', "
+                        f"or provide more context to keep refining."
+                    ),
+                    requires_user_action=True,
+                )
+
+        # --- Pipeline already fully complete ---
+        # current_stage is set to FINAL_EVIDENCE_AUDIT by _update_session_state after the last audit.
+        # Any further message should return a completion notice rather than re-running stages.
+        if stage == StageName.FINAL_EVIDENCE_AUDIT and self._next_stage(stage) is None:
+            artifact = self.storage.read_latest_artifact(session_id, self._stage_value(stage))
+            if artifact is not None:
+                return OrchestratorResponse(
+                    current_stage=stage,
+                    stage_status="completed",
+                    artifacts_produced=[f"{self._stage_value(stage)}:v{artifact.version}"],
+                    quality_gate_result=artifact.quality_gate,
+                    next_prompt_for_user=(
+                        "The full pipeline is complete. All ten stages have been executed. "
+                        "You can review any artifact above or start a new session."
+                    ),
+                    requires_user_action=False,
+                )
+
+        # --- Requested stage jump (existing behaviour) ---
         requested_stage = self._requested_stage(user_message)
         if requested_stage is not None and requested_stage != stage:
             logger.info("[controller] user requested stage=%s (current=%s)", requested_stage, stage)
@@ -154,63 +256,107 @@ class StageController:
                 return OrchestratorResponse(
                     current_stage=requested_stage,
                     stage_status="already_completed",
-                    artifacts_produced=[
-                        f"{self._stage_value(requested_stage)}:v{existing.version}"
-                    ],
+                    artifacts_produced=[f"{self._stage_value(requested_stage)}:v{existing.version}"],
                     quality_gate_result=existing.quality_gate,
                     next_prompt_for_user=(
-                        f"{self._stage_value(requested_stage)} is already complete. "
-                        f"Current pipeline stage remains {self._stage_value(stage)}."
+                        f"'{self._stage_value(requested_stage)}' is already complete. "
+                        f"Current pipeline stage remains '{self._stage_value(stage)}'."
                     ),
                     requires_user_action=False,
                 )
 
-        apply_result = self._execute_stage(
-            session,
-            stage,
-            user_message,
-            idempotency_key=idempotency_key,
-        )
+        # --- First run of the active stage ---
+        return self._run_from_stage(session_id, stage, user_message, idempotency_key)
 
-        if apply_result.applied:
+    def _run_from_stage(
+        self,
+        session_id: str,
+        stage: StageName,
+        user_message: str,
+        idempotency_key: str | None,
+    ) -> OrchestratorResponse:
+        """Execute stage (and any subsequent auto stages) until reaching a gate stage."""
+        produced: list[str] = []
+
+        while True:
+            session = self.storage.read_session(session_id)
+            if session is None:
+                raise ValueError(f"Session not found: {session_id}")
+
+            logger.info("[controller] executing stage=%s", stage)
+            msg = self._stage_user_message(session_id, stage, user_message)
+            apply_result = self._execute_stage(session, stage, msg, idempotency_key=idempotency_key)
+            idempotency_key = None  # only use on the first stage
+
+            if not apply_result.applied:
+                return OrchestratorResponse(
+                    current_stage=stage,
+                    stage_status="failed",
+                    artifacts_produced=produced,
+                    next_prompt_for_user=f"Stage '{self._stage_value(stage)}' failed: {apply_result.reason}",
+                    requires_user_action=True,
+                )
+
             logger.info("[controller] stage=%s completed v%s", stage, apply_result.version)
-        if not apply_result.applied:
-            return OrchestratorResponse(
-                current_stage=stage,
-                stage_status="failed",
-                artifacts_produced=[],
-                next_prompt_for_user=f"Stage failed: {apply_result.reason}",
-                requires_user_action=True,
-            )
+            produced.append(f"{self._stage_value(stage)}:v{apply_result.version}")
 
-        produced = [f"{self._stage_value(stage)}:v{apply_result.version}"]
-        session = self.storage.read_session(session_id) or session
-        next_stage = self._next_stage(stage)
-        audit_stage = self._audit_stage_after(stage)
-        if audit_stage is not None:
-            audit_result = self._run_evidence_audit(session, audit_stage)
-            if audit_result.applied:
-                produced.append(f"{self._stage_value(audit_stage)}:v{audit_result.version}")
-                next_stage = self._next_stage(audit_stage)
-                session = self.storage.read_session(session_id) or session
+            # Run inline audit if applicable (SOCRATIC_REVIEW → EVIDENCE_AUDIT_CHECKPOINT, etc.)
+            session = self.storage.read_session(session_id) or session
+            audit_stage = self._audit_stage_after(stage)
+            if audit_stage is not None:
+                audit_result = self._run_evidence_audit(session, audit_stage)
+                if audit_result.applied:
+                    produced.append(f"{self._stage_value(audit_stage)}:v{audit_result.version}")
+                effective_next = self._next_stage(audit_stage)
+            else:
+                effective_next = self._next_stage(stage)
 
-        session.current_stage = next_stage or audit_stage or stage
-        session.last_successful_stage = audit_stage or stage
-        self.storage.upsert_session(session)
+            # Update conversation history for this stage.
+            session = self.storage.read_session(session_id) or session
+            stage_key = self._stage_value(stage)
+            history = session.stage_conversation_history.get(stage_key, [])
+            history.append({"user": user_message})
+            session.stage_conversation_history[stage_key] = history
 
-        gate = session.quality_gates.get(stage)
-        return OrchestratorResponse(
-            current_stage=stage,
-            stage_status="completed",
-            artifacts_produced=produced,
-            quality_gate_result=gate,
-            next_prompt_for_user=(
-                "Pipeline complete."
-                if next_stage is None
-                else f"Proceeding to {self._stage_value(next_stage)} on next user message."
-            ),
-            requires_user_action=next_stage is None,
-        )
+            if effective_next is None:
+                # Pipeline complete — no gate needed.
+                session.last_successful_stage = audit_stage or stage
+                self.storage.upsert_session(session)
+                gate = session.quality_gates.get(stage)
+                return OrchestratorResponse(
+                    current_stage=stage,
+                    stage_status="completed",
+                    artifacts_produced=produced,
+                    quality_gate_result=gate,
+                    next_prompt_for_user="Pipeline complete.",
+                    requires_user_action=True,
+                )
+
+            if stage not in _NON_GATE_STAGES:
+                # Gate stage: pause and ask user to confirm before proceeding.
+                session.awaiting_stage_confirmation = True
+                session.pending_next_stage = effective_next
+                session.last_successful_stage = audit_stage or stage
+                self.storage.upsert_session(session)
+                gate = session.quality_gates.get(stage)
+                return OrchestratorResponse(
+                    current_stage=stage,
+                    stage_status="completed",
+                    artifacts_produced=produced,
+                    quality_gate_result=gate,
+                    next_prompt_for_user=(
+                        f"Stage '{stage_key}' complete. Review the artifact above, then reply "
+                        f"'proceed' to continue to '{self._stage_value(effective_next)}', "
+                        f"or provide additional context to refine this stage."
+                    ),
+                    requires_user_action=True,
+                )
+
+            # Non-gate stage: loop and run the next stage automatically.
+            session.last_successful_stage = audit_stage or stage
+            self.storage.upsert_session(session)
+            stage = effective_next
+            user_message = "continue"
 
     def rerun_impacted_stages(
         self,
@@ -281,6 +427,9 @@ class StageController:
                 base_version=base_version,
                 user_message=user_message,
             )
+        elif stage in {StageName.EVIDENCE_AUDIT_CHECKPOINT, StageName.FINAL_EVIDENCE_AUDIT}:
+            logger.info("[controller] executing stage=%s via EvidenceAuditor", stage)
+            return self._run_evidence_audit(session, stage)
         else:
             agent_name = STAGE_AGENT_MAP.get(stage)
             if agent_name is None:
@@ -361,6 +510,51 @@ class StageController:
             if isinstance(options, list) and options:
                 return options
         return []
+
+    @staticmethod
+    def _is_proceed_signal(message: str) -> bool:
+        normalized = message.strip().lower()
+        exact = {"proceed", "yes", "ok", "next", "continue", "go ahead", "confirm",
+                 "looks good", "approved", "done", "go", "lgtm", "approve"}
+        if normalized in exact:
+            return True
+        # Short affirmations like "yes, proceed" or "ok looks good"
+        if len(normalized) <= 40 and any(normalized.startswith(w) for w in ("yes", "proceed", "ok ", "looks good", "go ahead")):
+            return True
+        return False
+
+    @staticmethod
+    def _build_stage_context(history: list[dict], current_message: str) -> str:
+        """Prepend prior turn Q&A so the agent has full within-stage context."""
+        if not history:
+            return current_message
+        parts: list[str] = []
+        for turn in history:
+            parts.append(f"[User]: {turn['user']}")
+            if turn.get("agent"):
+                parts.append(f"[Agent]: {turn['agent']}")
+        parts.append(f"[User follow-up]: {current_message}")
+        return "\n\n".join(parts)
+
+    def _stage_user_message(self, session_id: str, stage: StageName, user_message: str) -> str:
+        """Build the context message for a stage by injecting the relevant prior artifact."""
+        source_stage = _STAGE_CONTEXT_ARTIFACT.get(stage)
+        if source_stage is None:
+            return user_message
+
+        artifact = self.storage.read_latest_artifact(session_id, self._stage_value(source_stage))
+        if artifact is None or not artifact.content:
+            return user_message
+
+        artifact_text = json.dumps(artifact.content, indent=2)
+        source_label = self._stage_value(source_stage)
+
+        # When advancing via "proceed"/"continue", the artifact IS the primary input.
+        if self._is_proceed_signal(user_message) or user_message == "continue":
+            return f"Process the following {source_label} artifact:\n\n{artifact_text}"
+
+        # User also provided additional context — include both.
+        return f"{user_message}\n\nContext from {source_label}:\n\n{artifact_text}"
 
     @staticmethod
     def _resolve_active_stage(session: ArchitectureSession) -> StageName:

@@ -139,6 +139,14 @@ class ArchitectureSession(ArchimedesModel):
     latest_artifact_versions: dict[StageName, int] = Field(default_factory=dict)
     is_archived: bool = False
 
+    # Conversational gate — set after each agent stage completes.
+    # Cleared when the user says "proceed" or provides refinement context.
+    awaiting_stage_confirmation: bool = False
+    pending_next_stage: StageName | None = None
+
+    # Per-stage turn history: stage_key → [{"user": "...", "agent": "..."}]
+    stage_conversation_history: dict[str, list[dict[str, str]]] = Field(default_factory=dict)
+
     @model_validator(mode="after")
     def ensure_current_stage_execution_exists(self):
         if self.current_stage not in self.stage_executions:

@@ -23,7 +23,10 @@ class ArchimedesApiError(RuntimeError):
 @dataclass(slots=True)
 class ArchimedesApiClient:
     base_url: str = field(default_factory=lambda: os.getenv("ARCHIMEDES_API_URL", DEFAULT_API_URL))
-    timeout: float = 120.0
+    timeout: float = 30.0
+    # send_message can chain multiple LLM agent stages (each with tool-call loops),
+    # so it gets a much longer read timeout independently of fast read-only calls.
+    message_timeout: float = 600.0
     transport: httpx.BaseTransport | None = None
 
     def create_session(
@@ -53,6 +56,7 @@ class ArchimedesApiClient:
             f"/sessions/{session_id}/messages",
             json={"message": message},
             headers=headers,
+            timeout=self.message_timeout,
         )
 
     def get_session(self, session_id: str) -> dict[str, Any]:
@@ -106,10 +110,10 @@ class ArchimedesApiClient:
                 return None
             raise
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+    def _request(self, method: str, path: str, *, timeout: float | None = None, **kwargs: Any) -> dict[str, Any]:
         with httpx.Client(
             base_url=self.base_url.rstrip("/"),
-            timeout=self.timeout,
+            timeout=timeout if timeout is not None else self.timeout,
             transport=self.transport,
         ) as client:
             response = client.request(method, path, **kwargs)
