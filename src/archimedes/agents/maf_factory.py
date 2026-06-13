@@ -177,6 +177,28 @@ _AGENT_PROMPTS: dict[str, str] = {
     "WAFReviewer":          "waf.md",
 }
 
+_FALLBACK_RETRIEVAL_PREFIX: dict[StageName, str] = {
+    StageName.INTAKE: "architecture intake business need",
+    StageName.REQUIREMENTS_EXTRACTION: "architecture requirements nonfunctional constraints",
+    StageName.OPTIONS_GENERATION: "Azure architecture options tradeoffs",
+    StageName.ADR_GENERATION: "architecture decision record Azure guidance",
+    StageName.HLD_GENERATION: "Azure high level design architecture components",
+    StageName.MINI_WAF_REVIEW: "Azure Well-Architected Framework review",
+}
+
+
+def _schema_instructions(agent_name: str) -> str:
+    schema_cls = AGENT_OUTPUT_SCHEMAS.get(agent_name)
+    if schema_cls is None:
+        return ""
+    schema = schema_cls.model_json_schema()
+    return (
+        "\n\n## Final Response Contract\n"
+        "Return ONLY a valid JSON object. Do not include markdown fences, prose, or explanation outside JSON.\n"
+        "The JSON object must validate against this schema:\n"
+        f"{json.dumps(schema, indent=2)}\n"
+    )
+
 
 # ---------------------------------------------------------------------------
 # MAFAgentFactory
@@ -210,9 +232,6 @@ class MAFAgentFactory:
     @property
     def maf_client(self) -> Any:
         if self._maf_client is None:
-            from agent_framework.foundry import FoundryChatClient
-            from azure.identity import DefaultAzureCredential
-
             endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
             if not endpoint:
                 raise ValueError(
@@ -220,16 +239,39 @@ class MAFAgentFactory:
                     "Set ARCHIMEDES_API_AGENT_RUNTIME=legacy to use the OpenAI fallback."
                 )
             model = os.getenv("DEFAULT_ARCHITECTURE_MODEL", "gpt-4.1")
-            logger.info(
-                "[maf-factory] creating FoundryChatClient endpoint=%s model=%s",
-                endpoint[:70],
-                model,
+            api_key = (
+                os.getenv("FOUNDRY_API_KEY")
+                or os.getenv("AZURE_AI_FOUNDRY_API_KEY")
+                or os.getenv("AZURE_OPENAI_API_KEY")
             )
-            self._maf_client = FoundryChatClient(
-                project_endpoint=endpoint,
-                model=model,
-                credential=DefaultAzureCredential(),
-            )
+            if api_key:
+                from agent_framework_openai import OpenAIChatClient
+
+                openai_base_url = endpoint.rstrip("/") + "/openai/v1"
+                logger.info(
+                    "[maf-factory] creating OpenAIChatClient base_url=%s model=%s auth=api_key",
+                    openai_base_url[:80],
+                    model,
+                )
+                self._maf_client = OpenAIChatClient(
+                    base_url=openai_base_url,
+                    api_key=api_key,
+                    model=model,
+                )
+            else:
+                from agent_framework.foundry import FoundryChatClient
+                from azure.identity import DefaultAzureCredential
+
+                logger.info(
+                    "[maf-factory] creating FoundryChatClient endpoint=%s model=%s auth=default_azure_credential",
+                    endpoint[:70],
+                    model,
+                )
+                self._maf_client = FoundryChatClient(
+                    project_endpoint=endpoint,
+                    model=model,
+                    credential=DefaultAzureCredential(),
+                )
         return self._maf_client
 
     # ------------------------------------------------------------------
@@ -305,7 +347,10 @@ class MAFAgentFactory:
         if "evaluate_quality_gate" in tool_names:
             tools.append(gate_tool)
 
-        instructions = (self.prompts_root / _AGENT_PROMPTS[agent_name]).read_text(encoding="utf-8")
+        instructions = (
+            (self.prompts_root / _AGENT_PROMPTS[agent_name]).read_text(encoding="utf-8")
+            + _schema_instructions(agent_name)
+        )
 
         agent = Agent(
             client=self.maf_client,
@@ -328,6 +373,16 @@ class MAFAgentFactory:
             len(response_text),
             len(collected_evidence),
         )
+        if not collected_evidence and "foundry_iq_retrieve" in tool_names:
+            query = self._fallback_retrieval_query(stage, user_message)
+            collected_evidence.extend(
+                self.kb_adapter.retrieve(query=query, top_k=5, session_id=session_id)
+            )
+            logger.info(
+                "[maf-factory] fallback foundry_iq_retrieve query=%r evidence=%d",
+                query[:80],
+                len(collected_evidence),
+            )
 
         payload = _extract_json(response_text)
 
@@ -337,9 +392,8 @@ class MAFAgentFactory:
             try:
                 payload = schema_cls.model_validate(payload).model_dump(mode="json")
             except Exception as exc:
-                logger.warning(
-                    "[maf-factory] schema validation failed agent=%s: %s", agent_name, exc
-                )
+                logger.exception("[maf-factory] schema validation failed agent=%s", agent_name)
+                raise ValueError(f"{agent_name} returned schema-invalid JSON") from exc
 
         return self._build_patch(
             session_id=session_id,
@@ -398,3 +452,11 @@ class MAFAgentFactory:
             evidence_sources=collected_evidence,
             quality_gate_result=quality_gate,
         )
+
+    @staticmethod
+    def _fallback_retrieval_query(stage: StageName, user_message: str) -> str:
+        prefix = _FALLBACK_RETRIEVAL_PREFIX.get(stage, "Azure architecture guidance")
+        clean_message = " ".join(user_message.strip().split())
+        if not clean_message:
+            return prefix
+        return f"{prefix}: {clean_message[:500]}"

@@ -17,8 +17,9 @@ Required sections:
 
 Rules:
 - Reference Socratic blind spots and assumptions explicitly.
-- Use format_adr tool for final rendering.
+- Use `foundry_iq_retrieve` to ground Azure service, reliability, security, and operational claims before finalizing.
 - Do not fabricate citations.
+- The input should include both options and Socratic review context. If Socratic context is missing, state that as an assumption in the output.
 
 ## Required JSON output schema
 

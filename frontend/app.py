@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import html
+import json
+import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -223,7 +226,7 @@ def _render_chat_panel(client: ArchimedesApiClient) -> None:
     # --- Processing state: show thinking bubble, do work, then rerun ---
     if st.session_state.is_processing and st.session_state.pending_prompt:
         pending = st.session_state.pending_prompt
-        stage_hint = _pending_stage_label()
+        stage_hint = _pending_stage_label(pending)
         with st.chat_message("assistant"):
             with st.spinner(f"Archimedes is running **{stage_hint}** — this may take a minute…"):
                 _send_message(client, pending)
@@ -293,6 +296,9 @@ def _render_artifact_tabs(client: ArchimedesApiClient) -> None:
 
 def _render_artifact_content(stage: str, artifact: dict[str, Any]) -> None:
     content = artifact.get("content") or {}
+    if stage == "intake":
+        _render_intake_artifact(content)
+        return
     if stage == "socratic_review":
         _render_socratic_artifact(content)
         return
@@ -326,6 +332,62 @@ def _render_artifact_content(stage: str, artifact: dict[str, Any]) -> None:
         st.write(content)
 
 
+def _render_intake_artifact(content: dict[str, Any]) -> None:
+    if not isinstance(content, dict):
+        st.write(content)
+        return
+
+    status = str(content.get("status") or "unknown")
+    status_label = status.replace("_", " ").title()
+    status_icon = "Ready" if status == "complete" else "Clarifying"
+    st.caption(f"{status_icon} · {status_label}")
+
+    refined_need = content.get("refined_business_need") or content.get("business_need")
+    if refined_need:
+        st.markdown("### Refined Business Need")
+        st.markdown(str(refined_need))
+
+    details = [
+        ("Domain", content.get("domain")),
+        ("Scale", content.get("scale_hint")),
+        ("Timeline", content.get("timeline_hint")),
+    ]
+    st.markdown("### Intake Details")
+    for label, value in details:
+        st.markdown(f"**{label}**")
+        st.write(str(value or "Not specified"))
+
+    compliance = content.get("compliance_flags") or []
+    if compliance:
+        st.markdown("**Compliance Flags**")
+        st.markdown(" ".join(f"`{flag}`" for flag in compliance))
+
+    open_questions = content.get("open_questions") or content.get("questions") or []
+    if open_questions:
+        st.markdown("### Open Questions")
+        seen: set[str] = set()
+        for question in open_questions:
+            if question not in seen:
+                seen.add(question)
+                st.markdown(f"- {question}")
+
+    rendered = {
+        "status",
+        "questions",
+        "refined_business_need",
+        "business_need",
+        "domain",
+        "scale_hint",
+        "timeline_hint",
+        "compliance_flags",
+        "open_questions",
+    }
+    remainder = {key: value for key, value in content.items() if key not in rendered and value}
+    if remainder:
+        with st.expander("Additional details"):
+            st.json(remainder)
+
+
 _HLD_DIAGRAM_SECTIONS = [
     ("system_context_diagram", "System Context (C4)"),
     ("container_diagram", "Container Diagram (C4)"),
@@ -334,6 +396,8 @@ _HLD_DIAGRAM_SECTIONS = [
     ("network_topology", "Network Topology / Trust Zones"),
     ("deployment_diagram", "Deployment"),
 ]
+
+_HLD_C4_DIAGRAM_KEYS = {"system_context_diagram", "container_diagram"}
 
 
 def _render_hld_artifact(content: dict[str, Any]) -> None:
@@ -353,23 +417,21 @@ def _render_hld_artifact(content: dict[str, Any]) -> None:
             continue
         rendered_keys.add(key)
         diagram = _find_mermaid(val) or (val if isinstance(val, str) else None)
-        if diagram:
-            st.markdown(f"### {label}")
-            _render_mermaid_block(diagram)
-        elif isinstance(val, dict):
-            st.markdown(f"### {label}")
-            st.json(val)
+        if not diagram:
+            continue
+        st.markdown(f"### {label}")
+        _render_mermaid_block(diagram)
 
-    # Catch any extra diagram-like fields the LLM may have named differently
+    # Catch any extra diagram-like string fields not in _HLD_DIAGRAM_SECTIONS
     for key, val in content.items():
         if key in rendered_keys or not isinstance(val, str):
             continue
         diagram = _find_mermaid(val)
-        if diagram:
-            rendered_keys.add(key)
-            label = key.replace("_", " ").title()
-            st.markdown(f"### {label}")
-            _render_mermaid_block(diagram)
+        if not diagram:
+            continue
+        rendered_keys.add(key)
+        st.markdown(f"### {key.replace('_', ' ').title()}")
+        _render_mermaid_block(diagram)
 
     # --- Components ---
     components = content.get("components") or content.get("component_model") or []
@@ -449,7 +511,6 @@ def _render_hld_artifact(content: dict[str, Any]) -> None:
 
 def _sanitize_mermaid(diagram: str) -> str:
     """Fix common LLM Mermaid generation errors before rendering."""
-    import re
     lines = diagram.splitlines()
     out: list[str] = []
     for line in lines:
@@ -473,35 +534,286 @@ def _sanitize_mermaid(diagram: str) -> str:
     return '\n'.join(out)
 
 
-def _render_mermaid_block(diagram: str) -> None:
-    sanitized = _sanitize_mermaid(diagram)
-    escaped = html.escape(sanitized)
-    # Mermaid 11 includes C4 natively. On parse error show warning + source inline.
+def _parse_c4_diagram(diagram: str) -> tuple[dict[str, tuple[str, str]], list[tuple[str, str, str, bool]]] | None:
+    stripped = diagram.strip()
+    if not stripped.startswith(("C4Context", "C4Container")):
+        return None
+
+    nodes: dict[str, tuple[str, str]] = {}
+    edges: list[tuple[str, str, str, bool]] = []
+    node_pattern = re.compile(
+        r'^\s*(Person|SystemDb|System|ContainerDb|ContainerQueue|Container|Boundary)\(\s*([^,\s]+)\s*,\s*"([^"]+)"'
+    )
+    rel_pattern = re.compile(r'^\s*(BiRel|Rel)\(\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*"([^"]*)"')
+
+    for line in stripped.splitlines():
+        node_match = node_pattern.match(line)
+        if node_match:
+            kind, alias, label = node_match.groups()
+            nodes[alias] = (kind, label)
+            continue
+        rel_match = rel_pattern.match(line)
+        if rel_match:
+            kind, source, target, label = rel_match.groups()
+            edges.append((source, target, label, kind == "BiRel"))
+
+    if not nodes:
+        return None
+
+    return nodes, edges
+
+
+def _c4_flowchart_fallback(diagram: str) -> str | None:
+    parsed = _parse_c4_diagram(diagram)
+    if parsed is None:
+        return None
+    nodes, edges = parsed
+
+    def _safe_id(value: str) -> str:
+        safe = re.sub(r"\W+", "_", value.strip())
+        return safe or "node"
+
+    def _safe_label(value: str) -> str:
+        return (
+            value.replace('"', "'")
+            .replace("[", "(")
+            .replace("]", ")")
+            .replace("|", "-")
+            .replace("\n", " ")
+        )
+
+    output = ["flowchart TB"]
+    for alias, (kind, label) in nodes.items():
+        node_id = _safe_id(alias)
+        node_label = _safe_label(label)
+        output.append(f'  {node_id}["{node_label}"]')
+
+    for source, target, label, bidirectional in edges:
+        source_id = _safe_id(source)
+        target_id = _safe_id(target)
+        edge_label = _safe_label(label)
+        arrow = "<-->" if bidirectional else "-->"
+        if edge_label:
+            output.append(f"  {source_id} {arrow}|{edge_label}| {target_id}")
+        else:
+            output.append(f"  {source_id} {arrow} {target_id}")
+
+    return "\n".join(output)
+
+
+def _render_c4_simple_graphic(diagram: str) -> bool:
+    parsed = _parse_c4_diagram(diagram)
+    if parsed is None:
+        return False
+    nodes, edges = parsed
+
+    def _kind_label(kind: str) -> str:
+        return {
+            "Person": "Actor",
+            "System": "System",
+            "SystemDb": "Data Store",
+            "Container": "Container",
+            "ContainerDb": "Data Store",
+            "ContainerQueue": "Queue",
+            "Boundary": "Boundary",
+        }.get(kind, kind)
+
+    card_html = []
+    for alias, (kind, label) in nodes.items():
+        card_html.append(
+            f"""
+            <div class="c4-card">
+              <div class="c4-kind">{html.escape(_kind_label(kind))}</div>
+              <div class="c4-title">{html.escape(label)}</div>
+              <div class="c4-alias">{html.escape(alias)}</div>
+            </div>
+            """
+        )
+
+    edge_rows = []
+    for source, target, label, bidirectional in edges:
+        source_label = nodes.get(source, ("", source))[1]
+        target_label = nodes.get(target, ("", target))[1]
+        arrow = "<->" if bidirectional else "->"
+        edge_rows.append(
+            f"""
+            <tr>
+              <td>{html.escape(source_label)}</td>
+              <td class="c4-arrow">{html.escape(arrow)}</td>
+              <td>{html.escape(target_label)}</td>
+              <td>{html.escape(label)}</td>
+            </tr>
+            """
+        )
+
     components.html(
         f"""
-        <div id="diagram-wrap" style="min-height:60px">
-          <pre class="mermaid">{escaped}</pre>
+        <style>
+          .c4-wrap {{
+            font-family: Segoe UI, Arial, sans-serif;
+            color: #182033;
+          }}
+          .c4-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin: 6px 0 18px;
+          }}
+          .c4-card {{
+            border: 1px solid #c8d2e1;
+            border-left: 5px solid #2b6cb0;
+            border-radius: 6px;
+            background: #f8fafc;
+            padding: 10px 12px;
+            min-height: 82px;
+          }}
+          .c4-kind {{
+            color: #5c667a;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+          }}
+          .c4-title {{
+            font-weight: 650;
+            margin-top: 5px;
+            line-height: 1.25;
+          }}
+          .c4-alias {{
+            margin-top: 6px;
+            font-size: 11px;
+            color: #7b8496;
+            font-family: Consolas, monospace;
+          }}
+          .c4-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+          }}
+          .c4-table th, .c4-table td {{
+            border-bottom: 1px solid #e3e7ef;
+            padding: 8px 6px;
+            text-align: left;
+            vertical-align: top;
+          }}
+          .c4-table th {{
+            color: #5c667a;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+          }}
+          .c4-arrow {{
+            width: 44px;
+            color: #2b6cb0;
+            font-family: Consolas, monospace;
+            white-space: nowrap;
+          }}
+        </style>
+        <div class="c4-wrap">
+          <div class="c4-grid">{"".join(card_html)}</div>
+          <table class="c4-table">
+            <thead><tr><th>From</th><th></th><th>To</th><th>Interaction</th></tr></thead>
+            <tbody>{"".join(edge_rows)}</tbody>
+          </table>
         </div>
-        <div id="diagram-error" style="display:none;padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap"></div>
+        """,
+        height=420,
+        scrolling=True,
+    )
+    with st.expander("Diagram source", expanded=False):
+        st.code(diagram, language="mermaid")
+    return True
+
+
+def _render_mermaid_block(diagram: str) -> None:
+    sanitized = _sanitize_mermaid(diagram)
+    if _render_c4_simple_graphic(sanitized):
+        return
+    fallback = _c4_flowchart_fallback(sanitized)
+    diagram_id = f"mermaid-{uuid.uuid4().hex}"
+    source_js = json.dumps(sanitized)
+    fallback_js = json.dumps(fallback)
+    components.html(
+        f"""
+        <style>
+          #{diagram_id}-wrap {{
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            min-height: 80px;
+            box-sizing: border-box;
+          }}
+          #{diagram_id}-wrap svg {{
+            /* Prevent Mermaid from shrinking SVG to fit the iframe — let the
+               wrapper scroll horizontally instead. */
+            max-width: none !important;
+            height: auto;
+            display: block;
+          }}
+        </style>
+        <div id="{diagram_id}-wrap">
+          <div id="{diagram_id}-diagram"></div>
+        </div>
+        <div id="{diagram_id}-note" style="display:none;margin:8px 0;padding:8px 10px;background:#eef6ff;border:1px solid #8ec5ff;border-radius:6px;font-family:sans-serif;font-size:12px;color:#1f4e79"></div>
+        <div id="{diagram_id}-error" style="display:none;padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap"></div>
         <script type="module">
           import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
           mermaid.initialize({{ startOnLoad: false, securityLevel: 'loose', theme: 'default' }});
+          const source = {source_js};
+          const fallback = {fallback_js};
+          const wrapEl = document.getElementById('{diagram_id}-wrap');
+          const diagramEl = document.getElementById('{diagram_id}-diagram');
+          const noteEl = document.getElementById('{diagram_id}-note');
+          const errorEl = document.getElementById('{diagram_id}-error');
+          const renderDiagram = async (text) => {{
+            const renderId = '{diagram_id}-svg-' + Math.random().toString(16).slice(2);
+            const result = await mermaid.render(renderId, text);
+            diagramEl.innerHTML = result.svg;
+            // After Mermaid injects the SVG, read its natural rendered height and
+            // expand the wrapper so the iframe shows the full diagram without a
+            // vertical scrollbar, while the horizontal scrollbar handles wide diagrams.
+            const svg = diagramEl.querySelector('svg');
+            if (svg) {{
+              svg.style.maxWidth = 'none';
+              await new Promise((r) => requestAnimationFrame(r));
+              const naturalH = svg.getBoundingClientRect().height;
+              if (naturalH > 0) {{
+                wrapEl.style.height = naturalH + 'px';
+                wrapEl.style.overflowY = 'visible';
+              }}
+            }}
+          }};
           try {{
-            await mermaid.run({{ querySelector: '.mermaid' }});
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            if (fallback) {{
+              await renderDiagram(fallback);
+              noteEl.style.display = 'block';
+              noteEl.textContent = 'Rendered as flowchart fallback for C4 readability. Native C4 source is available below.';
+            }} else {{
+              await renderDiagram(source);
+            }}
           }} catch(err) {{
-            document.getElementById('diagram-wrap').style.display = 'none';
-            var el = document.getElementById('diagram-error');
-            el.style.display = 'block';
-            el.textContent = '⚠ Diagram render error — ' + err.message;
+            if (fallback) {{
+              try {{
+                await renderDiagram(fallback);
+                noteEl.style.display = 'block';
+                noteEl.textContent = 'Rendered as flowchart fallback because native C4 rendering failed: ' + err.message;
+              }} catch(fallbackErr) {{
+                errorEl.style.display = 'block';
+                errorEl.textContent = 'Diagram render error: ' + err.message + '\\nFallback render error: ' + fallbackErr.message;
+              }}
+            }} else {{
+              errorEl.style.display = 'block';
+              errorEl.textContent = 'Diagram render error: ' + err.message;
+            }}
           }}
         </script>
         """,
-        height=500,
-        scrolling=True,
+        height=650,
+        scrolling=False,
     )
-    # Always show source so content is never lost even when rendering fails
     with st.expander("Diagram source", expanded=False):
         st.code(diagram, language="mermaid")
+    return
 
 
 _PATTERN_LABELS = {
@@ -1066,13 +1378,6 @@ def _format_orchestrator_response(response: dict[str, Any]) -> str:
     if evidence_count > 0:
         lines.append(f"Retrieved **{evidence_count}** knowledge base source(s) from Azure AI Search.")
 
-    # --- Requirement change detection ---
-    if change_detected and impacted:
-        lines.append(
-            "Requirement change detected. Re-ran: "
-            + ", ".join(f"`{s}`" for s in impacted)
-        )
-
     # --- Gate warnings ---
     if warnings:
         lines.append("\n**Quality gate warnings:**")
@@ -1157,9 +1462,17 @@ def _safe_call(func, *, default):
         return default
 
 
-def _pending_stage_label() -> str:
+def _is_proceed_prompt(prompt: str | None) -> bool:
+    normalized = (prompt or "").strip().lower()
+    return normalized in {"proceed", "continue", "next", "yes", "go ahead"}
+
+
+def _pending_stage_label(prompt: str | None = None) -> str:
     session = st.session_state.get("session") or {}
-    pending = session.get("pending_next_stage") or session.get("current_stage") or ""
+    if _is_proceed_prompt(prompt):
+        pending = session.get("pending_next_stage") or session.get("current_stage") or ""
+    else:
+        pending = session.get("current_stage") or ""
     labels = dict(STAGES)
     return labels.get(pending, pending.replace("_", " ").title()) if pending else "current stage"
 

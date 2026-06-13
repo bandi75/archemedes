@@ -29,6 +29,22 @@ def _options_artifact(session_id: str) -> VersionedArtifact:
         },
         quality_gate=QualityGateResult(status=QualityGateStatus.PASSED),
     )
+
+
+def _socratic_artifact(session_id: str) -> VersionedArtifact:
+    return VersionedArtifact(
+        session_id=session_id,
+        stage=StageName.SOCRATIC_REVIEW,
+        version=1,
+        stage_run_id=new_id("stage_run"),
+        content={
+            "socratic_review": {
+                "summary": "Security and SRE personas identified blast-radius and PCI-DSS risks.",
+                "blind_spots": ["Clarify multi-region failover and cardholder data boundaries."],
+            }
+        },
+        quality_gate=QualityGateResult(status=QualityGateStatus.PASSED_WITH_WARNINGS),
+    )
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.state_manager import ArchitectureStateManager
 
@@ -192,6 +208,29 @@ def test_stage_controller_preserves_pipeline_state_with_copying_storage():
     assert storage.session.stage_executions["intake"].status == "completed"
 
 
+def test_adr_context_includes_options_and_socratic_review():
+    session = ArchitectureSession(business_need="Build fraud detection assistant")
+    storage = FakeStorage(session)
+    storage.artifacts[(session.session_id, "options_generation", 1)] = _options_artifact(session.session_id)
+    storage.artifacts[(session.session_id, "socratic_review", 1)] = _socratic_artifact(session.session_id)
+    controller = StageController(
+        state_manager=ArchitectureStateManager(storage=storage),
+        storage=storage,
+        agent_factory=FakeAgentFactory(),
+    )
+
+    message = controller._stage_user_message(
+        session.session_id,
+        StageName.ADR_GENERATION,
+        "continue",
+    )
+
+    assert "Context from options_generation" in message
+    assert "Primary Option" in message
+    assert "Context from socratic_review" in message
+    assert "PCI-DSS risks" in message
+
+
 def test_stage_controller_detects_requirement_change():
     session = ArchitectureSession(
         business_need="Build fraud detection assistant",
@@ -221,7 +260,7 @@ def test_stage_controller_runs_evidence_checkpoint_after_socratic_review():
     artifact = _options_artifact(session.session_id)
     storage.artifacts[(session.session_id, "options_generation", 1)] = artifact
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     response = controller.process_message(session.session_id, "Proceed with Socratic review")
 
@@ -247,7 +286,7 @@ def test_repeated_completed_stage_request_does_not_advance_pipeline():
     artifact = _options_artifact(session.session_id)
     storage.artifacts[(session.session_id, "options_generation", 1)] = artifact
     manager = ArchitectureStateManager(storage=storage)
-    controller = StageController(state_manager=manager, storage=storage)
+    controller = StageController(state_manager=manager, storage=storage, agent_factory=FakeAgentFactory())
 
     first = controller.process_message(session.session_id, "Run Socratic review on the options.")
     second = controller.process_message(session.session_id, "Run Socratic review on the options.")

@@ -51,6 +51,27 @@ class ClaimItem(BaseModel):
     value: str
 
 
+class RequirementItem(BaseModel):
+    id: str = ""
+    description: str
+    priority: str = "must"  # "must" | "should" | "could"
+    source: str = ""
+
+
+class NonFunctionalRequirementItem(BaseModel):
+    category: str
+    description: str
+    target: str = ""
+    priority: str = "must"
+    source: str = ""
+
+
+class ConstraintItem(BaseModel):
+    category: str = ""
+    description: str
+    requires_user_validation: bool = False
+
+
 class RequirementsQualityChecklist(_ChecklistBase):
     scale_defined: bool = False
     security_defined: bool = False
@@ -63,7 +84,11 @@ class RequirementsQualityChecklist(_ChecklistBase):
 
 
 class RequirementsArtifact(BaseModel):
-    claims: list[ClaimItem] = Field(default_factory=list)
+    functional_requirements: list[RequirementItem] = Field(min_length=1)
+    non_functional_requirements: list[NonFunctionalRequirementItem] = Field(min_length=1)
+    constraints: list[ConstraintItem] = Field(min_length=0)
+    assumptions: list[ConstraintItem] = Field(min_length=0)
+    claims: list[ClaimItem] = Field(min_length=1)
     quality_checklist: RequirementsQualityChecklist = Field(
         default_factory=RequirementsQualityChecklist
     )
@@ -167,7 +192,10 @@ class ADRArtifact(BaseModel):
 
 class HLDComponent(BaseModel):
     name: str
-    type: str
+    type: str = ""
+    azure_service: str = ""
+    role: str = ""
+    sku_tier: str = ""
     description: str = ""
 
 
@@ -176,6 +204,11 @@ class HLDIntegrationPoint(BaseModel):
     target: str
     protocol: str = ""
     description: str = ""
+
+
+class HLDKeyRisk(BaseModel):
+    risk: str
+    mitigation: str = ""
 
 
 class HLDQualityChecklist(_ChecklistBase):
@@ -196,7 +229,7 @@ class HLDArtifact(BaseModel):
     components: list[HLDComponent] = Field(default_factory=list)
     integration_points: list[HLDIntegrationPoint] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
-    key_risks: list[str] = Field(default_factory=list)
+    key_risks: list[HLDKeyRisk | str] = Field(default_factory=list)
     quality_checklist: HLDQualityChecklist = Field(default_factory=HLDQualityChecklist)
 
 

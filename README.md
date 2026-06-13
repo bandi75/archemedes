@@ -132,6 +132,7 @@ Expected Socrates output (stage 5) will reference:
 | Variable | Required | Purpose |
 |---|---|---|
 | `FOUNDRY_PROJECT_ENDPOINT` | Yes (live agents) | Azure AI Foundry project endpoint (used by MAF `FoundryChatClient`) |
+| `FOUNDRY_API_KEY` | Local live agents | API key for endpoint+key authentication; if omitted, MAF uses `DefaultAzureCredential` |
 | `DEFAULT_ARCHITECTURE_MODEL` | No | Model deployment name (default `gpt-4.1`) |
 | `ARCHIMEDES_API_STORAGE_BACKEND` | No | `memory` or `cosmos` |
 | `ARCHIMEDES_API_COSMOS_ENDPOINT` | If cosmos | Cosmos DB account URL |
