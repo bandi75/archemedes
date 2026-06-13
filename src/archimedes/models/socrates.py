@@ -62,6 +62,7 @@ class SocraticSynthesis(ArchimedesModel):
     premortem_scenarios: list[str] = Field(default_factory=list)
     hybrid_option_summary: str | None = None
     rationale: str
+    recommended_decision: str | None = None  # "keep" | "modify" | "reject"
     claim_classifications: list[dict[str, Any]] = Field(default_factory=list)
 
 

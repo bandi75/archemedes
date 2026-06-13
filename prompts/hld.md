@@ -42,13 +42,28 @@ Also include:
 - assumptions (list of strings)
 - key_risks (list of {risk, mitigation})
 
-Quality checklist keys:
-- components_shown
-- data_flow_shown
-- trust_boundaries_shown
-- mermaid_render_check_passed
-- network_zones_defined
-- identity_flow_defined
-- observability_flow_defined
+## Required JSON output schema
 
-Return a StagePatch-compatible payload for stage=hld_generation.
+```json
+{
+  "system_context_diagram": "C4Context\n  ...",
+  "container_diagram": "C4Container\n  ...",
+  "data_flow_diagram": "flowchart TB\n  ...",
+  "network_topology_diagram": "flowchart TB\n  ...",
+  "components": [{"name": "...", "azure_service": "...", "role": "...", "sku_tier": "..."}],
+  "integration_points": [{"source": "...", "target": "...", "protocol": "...", "description": "..."}],
+  "assumptions": ["..."],
+  "key_risks": [{"risk": "...", "mitigation": "..."}],
+  "quality_checklist": {
+    "components_shown": true,
+    "data_flow_shown": true,
+    "trust_boundaries_shown": true,
+    "mermaid_render_check_passed": true,
+    "network_zones_defined": true,
+    "identity_flow_defined": true,
+    "observability_flow_defined": true
+  }
+}
+```
+
+Return ONLY the JSON object — no markdown, no prose outside the JSON.

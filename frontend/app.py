@@ -793,24 +793,68 @@ def _render_socratic_artifact(content: dict[str, Any]) -> None:
             st.write(review)
         return
 
+    _SEV_DOT = {"high": "🔴", "medium": "🟠", "low": "🟡"}
+    _DECISION_COLOR = {"keep": "🟢", "modify": "🟡", "reject": "🔴"}
+    _PERSONA_LABEL = {
+        "devils_advocate": "😈 Devil's Advocate",
+        "sre_ops_lead": "⚙️ SRE / Ops Lead",
+        "security_architect": "🔒 Security Architect",
+        "finops_lead": "💰 FinOps Lead",
+        "delivery_lead": "🚀 Delivery Lead",
+    }
+
     if synthesis:
-        st.metric("Recommended option", synthesis.get("recommended_option_id") or "Pending")
-        st.progress(float(synthesis.get("confidence") or 0.0))
-        st.write(synthesis.get("rationale", ""))
-        cols = st.columns(2)
-        with cols[0]:
-            st.markdown("**Blind spots**")
-            for item in synthesis.get("blind_spots", []):
-                st.write(f"- {item}")
-        with cols[1]:
-            st.markdown("**Pre-mortem**")
-            for item in synthesis.get("premortem_scenarios", []):
-                st.write(f"- {item}")
+        # --- Synthesizer headline ---
+        decision = synthesis.get("recommended_decision")
+        rec_option = synthesis.get("recommended_option_id") or "Pending"
+        if decision:
+            dot = _DECISION_COLOR.get(str(decision).lower(), "⚪")
+            st.markdown(f"## {dot} Recommendation: **{rec_option}** — *{decision.upper()}*")
+        else:
+            st.markdown(f"## Recommended option: **{rec_option}**")
+
+        confidence = float(synthesis.get("confidence") or 0.0)
+        st.progress(confidence, text=f"Synthesizer confidence: {int(confidence * 100)}%")
+        st.markdown(synthesis.get("rationale", ""))
+
+        col1, col2 = st.columns(2)
+        with col1:
+            blind_spots = synthesis.get("blind_spots") or []
+            if blind_spots:
+                st.markdown("**Blind spots identified**")
+                for item in blind_spots:
+                    st.markdown(f"- {item}")
+            assumptions = synthesis.get("assumptions_to_validate") or []
+            if assumptions:
+                st.markdown("**Assumptions to validate**")
+                for item in assumptions:
+                    st.markdown(f"- {item}")
+        with col2:
+            premortem = synthesis.get("premortem_scenarios") or []
+            if premortem:
+                st.markdown("**Pre-mortem scenarios**")
+                for item in premortem:
+                    st.markdown(f"- {item}")
+
+    st.divider()
+    st.markdown(f"### Persona reviews ({len(persona_analyses)} agents)")
     for analysis in persona_analyses:
-        with st.expander(str(analysis.get("persona", "Persona"))):
-            st.write(analysis.get("summary", ""))
-            for finding in analysis.get("findings", []):
-                st.markdown(f"- `{finding.get('severity', 'medium')}` {finding.get('finding')}")
+        persona_key = str(analysis.get("persona", ""))
+        label = _PERSONA_LABEL.get(persona_key, persona_key.replace("_", " ").title())
+        findings = analysis.get("findings", [])
+        high_count = sum(1 for f in findings if f.get("severity") == "high")
+        badge = f" — {high_count} 🔴" if high_count else ""
+        with st.expander(f"{label}{badge}", expanded=(high_count > 0)):
+            summary = analysis.get("summary", "")
+            if summary:
+                st.markdown(f"*{summary}*")
+            for finding in findings:
+                sev = str(finding.get("severity", "medium")).lower()
+                dot = _SEV_DOT.get(sev, "⚪")
+                st.markdown(f"{dot} **{sev.capitalize()}** — {finding.get('finding', '')}")
+                action = finding.get("recommended_action")
+                if action:
+                    st.caption(f"→ {action}")
 
 
 def _render_evidence_audit_artifact(content: dict[str, Any]) -> None:

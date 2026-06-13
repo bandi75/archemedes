@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     cosmos_endpoint: str | None = None
     cosmos_database_name: str = "archimedes"
     cosmos_key: str | None = None
+    agent_runtime: str = "maf"  # "maf" | "legacy"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -65,6 +66,27 @@ def _error_response(status_code: int, detail: str, error_code: str) -> JSONRespo
         status_code=status_code,
         content={"detail": detail, "error_code": error_code},
     )
+
+
+def _build_agent_factory(settings: Settings):
+    _log = logging.getLogger(__name__)
+    if settings.agent_runtime.strip().lower() == "legacy":
+        from archimedes.agents.factory import AgentFactory
+        _log.info("[startup] agent_runtime=legacy — using hand-rolled OpenAI tool-call loop")
+        return AgentFactory.from_env()
+    from archimedes.agents.maf_factory import MAFAgentFactory
+    _log.info("[startup] agent_runtime=maf — using Microsoft Agent Framework")
+    return MAFAgentFactory.from_env()
+
+
+def _build_socrates_workflow(settings: Settings, agent_factory):
+    if settings.agent_runtime.strip().lower() == "maf":
+        from archimedes.agents.maf_factory import MAFAgentFactory
+        if isinstance(agent_factory, MAFAgentFactory):
+            from archimedes.socrates.maf_socrates import MAFSocratesWorkflow
+            return MAFSocratesWorkflow.from_maf_factory(agent_factory)
+    from archimedes.socrates.workflow import build_socrates_workflow
+    return build_socrates_workflow()
 
 
 def _build_storage(settings: Settings):
@@ -102,9 +124,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         storage = getattr(app.state, "storage", None) or _build_storage(settings)
         app.state.storage = storage
         app.state.state_manager = ArchitectureStateManager(storage=storage)
+        agent_factory = _build_agent_factory(settings)
+        socrates_workflow = _build_socrates_workflow(settings, agent_factory)
         app.state.stage_controller = StageController(
             state_manager=app.state.state_manager,
             storage=storage,
+            agent_factory=agent_factory,
+            socrates_workflow=socrates_workflow,
         )
         if settings.validate_required_env:
             missing = _missing_required_env(settings.required_env_vars)

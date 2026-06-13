@@ -21,12 +21,32 @@ Rules:
 - Ground service recommendations in knowledge_base_retrieve evidence.
 - Do not invent factual limits, SLAs, pricing, or availability.
 
-Quality checklist keys:
-- min_viable_options
-- rejected_option
-- tradeoffs_scored
-- cost_assumptions_present
-- risk_summary_present
-- evidence_links_present
+## Required JSON output schema
 
-Return a StagePatch-compatible payload for stage=options_generation.
+```json
+{
+  "options": [
+    {
+      "name": "Option A — Event-Driven on AKS",
+      "summary": "...",
+      "components": [{"azure_service": "Azure Event Hubs", "role": "ingestion", "sku_tier": "Premium"}],
+      "trade_off_scores": {"cost": 6, "complexity": 7, "scalability": 9, "time_to_market": 5, "ops_burden": 7},
+      "key_risks": ["AKS operational complexity"],
+      "rationale": "Best fits 10K TPS with low-latency requirements."
+    }
+  ],
+  "rejected_options": [
+    {"name": "Monolithic batch processing", "rejection_reason": "Cannot meet 10K TPS real-time requirements."}
+  ],
+  "quality_checklist": {
+    "min_viable_options": true,
+    "rejected_option": true,
+    "tradeoffs_scored": true,
+    "cost_assumptions_present": true,
+    "risk_summary_present": true,
+    "evidence_links_present": true
+  }
+}
+```
+
+Return ONLY the JSON object above — no markdown fences, no prose outside the JSON.

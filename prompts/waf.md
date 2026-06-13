@@ -20,13 +20,29 @@ Rules:
 - Keep review concise and actionable for MVP.
 - Do not force medium/high findings when low-risk is more accurate.
 
-Quality checklist keys:
-- reliability_reviewed
-- security_reviewed
-- cost_reviewed
-- ops_reviewed
-- performance_reviewed
-- critical_findings_prioritized
-- mitigations_present
+## Required JSON output schema
 
-Return a StagePatch-compatible payload for stage=mini_waf_review.
+```json
+{
+  "findings": [
+    {
+      "pillar": "Reliability",
+      "severity": "high",
+      "recommendation": "...",
+      "evidence_source_id": "ev_..."
+    }
+  ],
+  "summary": "Overall WAF assessment summary.",
+  "quality_checklist": {
+    "reliability_reviewed": true,
+    "security_reviewed": true,
+    "cost_reviewed": true,
+    "ops_reviewed": true,
+    "performance_reviewed": true,
+    "critical_findings_prioritized": true,
+    "mitigations_present": true
+  }
+}
+```
+
+Return ONLY the JSON object — no markdown, no prose outside the JSON.
