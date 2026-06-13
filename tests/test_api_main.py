@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import hashlib
+import json
 
 import httpx
 import pytest
 from fastapi import HTTPException
 
+from archimedes.models.base import new_id
 from archimedes.models.artifacts import VersionedArtifact
+from archimedes.models.claims import ClaimRecord
+from archimedes.models.evidence import EvidenceSource
 from archimedes.models.enums import StageName
+from archimedes.models.enums import ClaimType
+from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
 from api.main import Settings, create_app
 
@@ -24,6 +31,63 @@ def _test_app():
     return create_app(Settings(validate_required_env=False, storage_backend="memory"))
 
 
+class FakeAgentFactory:
+    def run_stage(
+        self,
+        agent_name: str,
+        *,
+        session_id: str,
+        stage: StageName,
+        base_version: int,
+        user_message: str,
+    ) -> StagePatch:
+        stage_value = stage.value if isinstance(stage, StageName) else str(stage)
+        payload = {"stage": stage_value, "status": "generated", "summary": user_message[:80]}
+        if stage == StageName.OPTIONS_GENERATION:
+            payload["options"] = [
+                {
+                    "option_id": "option_event_streaming",
+                    "name": "Event streaming",
+                    "summary": "Streaming option",
+                }
+            ]
+        if stage == StageName.HLD_GENERATION:
+            payload["components"] = [{"name": "Event Hubs", "role": "ingestion"}]
+        patch_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        stage_run_id = new_id("stage_run")
+        evidence = EvidenceSource(
+            session_id=session_id,
+            source=f"fake-{stage_value}",
+            retrieved_via="user_input",
+            excerpt=user_message[:120],
+        )
+        claim = ClaimRecord(
+            session_id=session_id,
+            claim=f"{stage_value} processed by {agent_name}.",
+            type=ClaimType.ASSUMPTION,
+            confidence=0.65,
+            stage=stage,
+            evidence_ids=[evidence.evidence_id],
+        )
+        return StagePatch(
+            session_id=session_id,
+            stage=stage,
+            stage_run_id=stage_run_id,
+            base_version=base_version,
+            target_version=base_version + 1,
+            idempotency_key=hashlib.sha256(
+                f"{session_id}:{stage_value}:{stage_run_id}:{patch_hash}".encode()
+            ).hexdigest(),
+            patch_hash=patch_hash,
+            patch=payload,
+            claims=[claim],
+            evidence_sources=[evidence],
+            quality_gate_result=QualityGateResult(status="passed"),
+        )
+
+
 @asynccontextmanager
 async def _test_client(
     app=None,
@@ -36,6 +100,7 @@ async def _test_client(
         raise_app_exceptions=raise_server_exceptions,
     )
     async with app.router.lifespan_context(app):
+        app.state.stage_controller.agent_factory = FakeAgentFactory()
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",

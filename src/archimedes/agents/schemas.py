@@ -5,7 +5,25 @@ forced to emit a schema-valid JSON object as its final (non-tool-call) response.
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class _ChecklistBase(BaseModel):
+    """Base for quality-checklist models. Accepts a list of passed check names.
+
+    LLMs sometimes return ["field_a", "field_b"] instead of {"field_a": true}.
+    This validator normalises both forms to a plain dict before Pydantic
+    validates the individual bool fields.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_list_to_dict(cls, v: Any) -> Any:
+        if isinstance(v, list):
+            return {name: True for name in v if isinstance(name, str)}
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +51,28 @@ class ClaimItem(BaseModel):
     value: str
 
 
-class RequirementsQualityChecklist(BaseModel):
+class RequirementItem(BaseModel):
+    id: str = ""
+    description: str
+    priority: str = "must"  # "must" | "should" | "could"
+    source: str = ""
+
+
+class NonFunctionalRequirementItem(BaseModel):
+    category: str
+    description: str
+    target: str = ""
+    priority: str = "must"
+    source: str = ""
+
+
+class ConstraintItem(BaseModel):
+    category: str = ""
+    description: str
+    requires_user_validation: bool = False
+
+
+class RequirementsQualityChecklist(_ChecklistBase):
     scale_defined: bool = False
     security_defined: bool = False
     latency_defined: bool = False
@@ -45,7 +84,11 @@ class RequirementsQualityChecklist(BaseModel):
 
 
 class RequirementsArtifact(BaseModel):
-    claims: list[ClaimItem] = Field(default_factory=list)
+    functional_requirements: list[RequirementItem] = Field(min_length=1)
+    non_functional_requirements: list[NonFunctionalRequirementItem] = Field(min_length=1)
+    constraints: list[ConstraintItem] = Field(min_length=0)
+    assumptions: list[ConstraintItem] = Field(min_length=0)
+    claims: list[ClaimItem] = Field(min_length=1)
     quality_checklist: RequirementsQualityChecklist = Field(
         default_factory=RequirementsQualityChecklist
     )
@@ -81,10 +124,15 @@ class ArchitectureOption(BaseModel):
 
 class RejectedOption(BaseModel):
     name: str
-    rejection_reason: str
+    rejection_reason: str = ""
+    reason: str = ""  # alternate field name LLMs sometimes use
+
+    @property
+    def effective_reason(self) -> str:
+        return self.rejection_reason or self.reason
 
 
-class OptionsQualityChecklist(BaseModel):
+class OptionsQualityChecklist(_ChecklistBase):
     min_viable_options: bool = False
     rejected_option: bool = False
     tradeoffs_scored: bool = False
@@ -117,7 +165,7 @@ class ADRConsequences(BaseModel):
     neutral: list[str] = Field(default_factory=list)
 
 
-class ADRQualityChecklist(BaseModel):
+class ADRQualityChecklist(_ChecklistBase):
     decision_captured: bool = False
     selected_option_valid: bool = False
     alternatives_listed: bool = False
@@ -144,7 +192,10 @@ class ADRArtifact(BaseModel):
 
 class HLDComponent(BaseModel):
     name: str
-    type: str
+    type: str = ""
+    azure_service: str = ""
+    role: str = ""
+    sku_tier: str = ""
     description: str = ""
 
 
@@ -155,7 +206,12 @@ class HLDIntegrationPoint(BaseModel):
     description: str = ""
 
 
-class HLDQualityChecklist(BaseModel):
+class HLDKeyRisk(BaseModel):
+    risk: str
+    mitigation: str = ""
+
+
+class HLDQualityChecklist(_ChecklistBase):
     components_shown: bool = False
     data_flow_shown: bool = False
     trust_boundaries_shown: bool = False
@@ -173,7 +229,7 @@ class HLDArtifact(BaseModel):
     components: list[HLDComponent] = Field(default_factory=list)
     integration_points: list[HLDIntegrationPoint] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
-    key_risks: list[str] = Field(default_factory=list)
+    key_risks: list[HLDKeyRisk | str] = Field(default_factory=list)
     quality_checklist: HLDQualityChecklist = Field(default_factory=HLDQualityChecklist)
 
 
@@ -188,7 +244,7 @@ class WAFFinding(BaseModel):
     evidence_source_id: str = ""
 
 
-class WAFQualityChecklist(BaseModel):
+class WAFQualityChecklist(_ChecklistBase):
     reliability_reviewed: bool = False
     security_reviewed: bool = False
     cost_reviewed: bool = False

@@ -10,3 +10,4 @@ azure-cosmos
 azure-identity
 azure-ai-inference
 openai
+agent-framework

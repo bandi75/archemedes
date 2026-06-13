@@ -1,11 +1,36 @@
 # Archimedes — AI Architecture Workbench
 
-Archimedes is a multi-agent reasoning system that turns a one-line business need into a fully
-grounded, evidence-backed architecture. A judge describes a problem; Archimedes runs ten
-specialised agents in sequence — each grounding its output in Azure Architecture Center
-documents retrieved from an Azure AI Search knowledge base — and produces requirements, three
-architecture options, a five-persona Socratic challenge, an ADR, a high-level design, and a
-WAF review, all versioned and diffable.
+Archimedes is a multi-agent reasoning system built on **Microsoft Agent Framework** that turns
+a one-line business need into a fully grounded, evidence-backed architecture.  A judge describes
+a problem; Archimedes runs ten specialised agents in sequence — each grounding its output in
+Azure Architecture Center documents retrieved from an Azure AI Search knowledge base — and
+produces requirements, three architecture options, a five-persona Socratic challenge, an ADR,
+a high-level design, and a WAF review, all versioned and diffable.
+
+## Microsoft Agent Framework
+
+All LLM-backed pipeline stages (`IntakeAgent`, `RequirementsEngineer`, `OptionsGenerator`,
+`ADRWriter`, `HLDDesigner`, `WAFReviewer`) run as **Microsoft Agent Framework agents** via
+`agent_framework.Agent` and `agent_framework.foundry.FoundryChatClient`.
+
+The Socratic review stage runs a **MAF concurrent workflow**: five specialist personas
+(`DevilsAdvocate`, `SRELead`, `SecurityArchitect`, `FinOpsLead`, `DeliveryLead`) execute in
+parallel via `ConcurrentBuilder.with_aggregator()` from `agent_framework.orchestrations`.
+A sixth `SynthesizerAgent` fans in all persona findings and produces the final recommendation.
+
+```python
+# Concurrent Socratic review — 5 MAF agents in parallel
+workflow = (
+    ConcurrentBuilder(participants=[devils_advocate, sre_lead, security_architect,
+                                    finops_lead, delivery_lead])
+    .with_aggregator(socrates_aggregator)   # fan-in: runs synthesizer, returns SocraticReview
+    .build()
+)
+events = await workflow.run(architecture_context)
+```
+
+The application-level `StageController` stays outside MAF — it owns quality gates, artifact
+versioning, evidence persistence, and selective re-reasoning on requirement changes.
 
 ## How it reasons
 
@@ -62,8 +87,8 @@ A synthesizer ranks the options by weighted persona score and generates a pre-mo
 ```bash
 git clone <repo-url> && cd archemedes
 python -m venv .venv && .venv\Scripts\activate   # Windows; use source .venv/bin/activate on Mac/Linux
-pip install -r requirements.txt
-cp .env.example .env           # fill in FOUNDRY_PROJECT_ENDPOINT (and optionally ARCH_SEARCH_*)
+pip install -r requirements.txt        # includes agent-framework and agent-framework-foundry
+cp .env.example .env                   # fill in FOUNDRY_PROJECT_ENDPOINT (and optionally ARCH_SEARCH_*)
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000 &
 streamlit run frontend/app.py
 ```
@@ -96,17 +121,18 @@ Expected Socrates output (stage 5) will reference:
 | Criterion | Weight | How Archimedes addresses it |
 |---|---|---|
 | **Reliability** | 20% | 10-stage pipeline with quality gates, ETags for optimistic concurrency, re-reasoning on requirement changes |
-| **Reasoning** | 20% | Multi-agent tool-call loop grounds every claim in KB evidence; Socratic personas run context-aware parallel analysis; EvidenceAuditor links every claim to a source |
+| **Reasoning** | 20% | MAF `Agent.run()` grounds every claim in KB evidence via `foundry_iq_retrieve` tool; five MAF persona agents run concurrently via `ConcurrentBuilder` for Socratic review; `EvidenceAuditor` links every claim to a source |
 | **Accuracy** | 20% | Azure AI Search semantic retrieval with extractive captions; every factual claim carries `evidence_ids`; ungrounded claims are flagged and surfaced to the user |
 | **User Experience** | 15% | Streamlit chat UI with stage gate confirmations; structured artifact views for Requirements, ADR, WAF; session history sidebar; assumption validation buttons |
-| **Creativity** | 15% | Deterministic 5-persona Socratic challenge with parallel execution and synthesiser pre-mortem; automatic dependency-aware selective re-reasoning on requirement changes |
+| **Creativity** | 15% | MAF-concurrent 5-persona Socratic challenge: five real LLM agents run in parallel via `ConcurrentBuilder`, each producing context-specific findings; synthesizer pre-mortem; automatic dependency-aware selective re-reasoning on requirement changes |
 | **Community** | 10% | Public repo; quickstart in 5 commands; mock mode requires no Azure account |
 
 ## Environment variables
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `FOUNDRY_PROJECT_ENDPOINT` | Yes (live agents) | Azure AI Foundry project endpoint |
+| `FOUNDRY_PROJECT_ENDPOINT` | Yes (live agents) | Azure AI Foundry project endpoint (used by MAF `FoundryChatClient`) |
+| `FOUNDRY_API_KEY` | Local live agents | API key for endpoint+key authentication; if omitted, MAF uses `DefaultAzureCredential` |
 | `DEFAULT_ARCHITECTURE_MODEL` | No | Model deployment name (default `gpt-4.1`) |
 | `ARCHIMEDES_API_STORAGE_BACKEND` | No | `memory` or `cosmos` |
 | `ARCHIMEDES_API_COSMOS_ENDPOINT` | If cosmos | Cosmos DB account URL |
@@ -120,10 +146,10 @@ Expected Socrates output (stage 5) will reference:
 ```
 src/api/            FastAPI application (routes, storage, DI)
 src/archimedes/     Core business logic
-  agents/           LLM agent client + factory + deterministic detectors
+  agents/           MAF agent factory + deterministic detectors
   models/           Pydantic schemas for all domain objects
   orchestrator/     Stage controller + dependency re-reasoning engine
-  socrates/         Deterministic 5-persona Socratic debate engine
+  socrates/         MAF concurrent 5-persona Socratic debate engine
   state/            State manager, quality gates, diff service
   storage/          Cosmos DB client
   tools/            Azure AI Search retriever + mock KB adapter

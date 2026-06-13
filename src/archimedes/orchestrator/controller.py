@@ -40,6 +40,10 @@ _STAGE_CONTEXT_ARTIFACT: dict[StageName, StageName] = {
     StageName.MINI_WAF_REVIEW: StageName.HLD_GENERATION,
 }
 
+_ADDITIONAL_STAGE_CONTEXT_ARTIFACTS: dict[StageName, tuple[StageName, ...]] = {
+    StageName.ADR_GENERATION: (StageName.SOCRATIC_REVIEW,),
+}
+
 # Stages that run automatically (no user confirmation gate after completion).
 # All other stages pause and ask the user to review before proceeding.
 _NON_GATE_STAGES: frozenset[StageName] = frozenset({
@@ -547,6 +551,25 @@ class StageController:
         source_stage = _STAGE_CONTEXT_ARTIFACT.get(stage)
         if source_stage is None:
             return user_message
+
+        context_parts: list[tuple[str, str]] = []
+        for context_stage in (source_stage, *_ADDITIONAL_STAGE_CONTEXT_ARTIFACTS.get(stage, ())):
+            artifact = self.storage.read_latest_artifact(session_id, self._stage_value(context_stage))
+            if artifact is not None and artifact.content:
+                context_parts.append(
+                    (
+                        self._stage_value(context_stage),
+                        json.dumps(artifact.content, indent=2),
+                    )
+                )
+        if len(context_parts) > 1:
+            context_text = "\n\n".join(
+                f"Context from {source_label}:\n\n{artifact_text}"
+                for source_label, artifact_text in context_parts
+            )
+            if self._is_proceed_signal(user_message) or user_message == "continue":
+                return f"Process the following pipeline context:\n\n{context_text}"
+            return f"{user_message}\n\n{context_text}"
 
         artifact = self.storage.read_latest_artifact(session_id, self._stage_value(source_stage))
         if artifact is None or not artifact.content:
