@@ -141,9 +141,6 @@ export function SessionActions() {
   return (
     <div className="rounded-lg border border-border bg-panel p-4 shadow-panel">
       <div className="flex flex-wrap gap-2">
-        <button className="inline-flex h-9 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-white" onClick={createSession} type="button">
-          <Plus className="h-4 w-4" aria-hidden="true" /> New session
-        </button>
         <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={runStage} type="button">
           <StepForward className="h-4 w-4" aria-hidden="true" /> Run next
         </button>
@@ -161,6 +158,9 @@ export function SessionActions() {
         </button>
         <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={submitChange} type="button">
           <GitBranch className="h-4 w-4" aria-hidden="true" /> Submit change
+        </button>
+        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm font-medium text-ink-muted" onClick={createSession} type="button">
+          <Plus className="h-4 w-4" aria-hidden="true" /> New session
         </button>
       </div>
       <p className="mt-3 inline-flex items-center gap-2 text-sm text-ink-muted">

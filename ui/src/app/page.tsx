@@ -6,7 +6,6 @@ import { MetricCard } from "@/components/shared/metric-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { QualityGateBadge } from "@/components/shared/quality-gate-badge";
 import { DataTable } from "@/components/shared/data-table";
-import { RightDrawer } from "@/components/shared/right-drawer";
 import { mockPipelineStages, mockSessions } from "@/lib/mock-data";
 
 export default function Home() {
@@ -35,7 +34,7 @@ export default function Home() {
             <h2 className="text-base font-semibold text-ink">Create a new architecture session</h2>
             <p className="mt-1 text-sm text-ink-muted">Start with a business need, choose library context, and launch the guided pipeline.</p>
           </div>
-          <Link className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white transition hover:bg-accent" href="/intake">
+          <Link className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white transition hover:bg-accent" href="/sessions/new">
             <Plus className="h-4 w-4" aria-hidden="true" />
             New session
           </Link>
@@ -71,8 +70,8 @@ export default function Home() {
 
           <div className="rounded-lg border border-border bg-panel shadow-panel">
             <div className="border-b border-border px-5 py-4">
-              <h2 className="text-base font-semibold text-ink">Pipeline skeleton</h2>
-              <p className="mt-1 text-sm text-ink-muted">The shell reserves stable space for Phase 2 live orchestration state.</p>
+              <h2 className="text-base font-semibold text-ink">Workbench readiness</h2>
+              <p className="mt-1 text-sm text-ink-muted">Core session workflow areas available for the current product path.</p>
             </div>
             <ol className="space-y-3 p-5">
               {mockPipelineStages.map((stage) => (
@@ -91,24 +90,17 @@ export default function Home() {
 
         <section className="grid gap-5 md:grid-cols-3">
           {[
-            ["Needs my review", "3 assumptions need validation before the next run."],
-            ["Failed / waiting stages", "No failed stages. Socrates is currently running."],
-            ["Architecture libraries", "Org standards, approved services, patterns, and review checklists."],
-          ].map(([title, body], index) => (
-            <article key={title} className="rounded-lg border border-border bg-panel p-5 shadow-panel">
+            ["Needs my review", "3 assumptions need validation before the next run.", "/evidence"],
+            ["Failed / waiting stages", "No failed stages. Socrates is currently running.", "/pipeline"],
+            ["Architecture libraries", "Org standards, approved services, patterns, and review checklists.", "/library"],
+          ].map(([title, body, href], index) => (
+            <Link key={title} className="rounded-lg border border-border bg-panel p-5 shadow-panel transition hover:border-accent hover:shadow-elevated" href={href}>
               <BookOpen className="h-5 w-5 text-accent" aria-hidden={index !== 2} />
               <h2 className="mt-3 text-base font-semibold text-ink">{title}</h2>
               <p className="mt-2 text-sm leading-6 text-ink-muted">{body}</p>
-            </article>
+            </Link>
           ))}
         </section>
-
-        <RightDrawer title="Foundation Drawer" description="Shared drawer component wired for later detail views.">
-          <div className="space-y-3 text-sm text-ink-muted">
-            <p>Selected session details, quality gate evidence, and trace events will dock here in later phases.</p>
-            <QualityGateBadge status="passed_with_warnings" />
-          </div>
-        </RightDrawer>
       </div>
     </AppShell>
   );

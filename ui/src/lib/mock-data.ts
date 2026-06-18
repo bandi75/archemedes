@@ -88,11 +88,17 @@ export const mockPipelineView: PipelineView = {
   },
   current_stage: "socratic_review",
   stages: [
+    { stage: "intake", label: "Intake", status: "completed", summary: "Business need, domain context, and library grounding captured.", artifact_version: 1, last_updated_at: "2026-06-18T08:55:00Z", quality_gate: { status: "passed" } },
     { stage: "requirements_extraction", label: "Requirements", status: "completed", summary: "NFRs, PCI-DSS constraints, and throughput assumptions captured.", artifact_version: 1, last_updated_at: "2026-06-18T08:58:00Z", quality_gate: { status: "passed" } },
     { stage: "pattern_detection", label: "Pattern Detection", status: "completed", summary: "Real-time streaming and event-driven architecture detected.", artifact_version: 1, last_updated_at: "2026-06-18T09:00:00Z", quality_gate: { status: "passed" } },
     { stage: "options_generation", label: "Options", status: "completed", summary: "Three Azure architecture options generated and scored.", artifact_version: 1, last_updated_at: "2026-06-18T09:01:00Z", quality_gate: { status: "passed_with_warnings" } },
     { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing operability, cost, security, delivery, and failure modes.", artifact_version: 1, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: { status: "passed_with_warnings" } },
     { stage: "evidence_audit_checkpoint", label: "Evidence Checkpoint", status: "pending", summary: "Evidence coverage will be audited after Socrates synthesis.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
+    { stage: "adr_generation", label: "ADR", status: "pending", summary: "Decision record will be generated after review completes.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
+    { stage: "hld_generation", label: "HLD", status: "pending", summary: "High-level design and diagrams will be produced from the selected option.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
+    { stage: "mini_waf_review", label: "Mini WAF Review", status: "pending", summary: "Reliability, security, cost, and operational risks will be checked.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
+    { stage: "final_evidence_audit", label: "Final Evidence Audit", status: "pending", summary: "Final evidence coverage and unsupported assumptions will be audited.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
+    { stage: "rereasoning", label: "Change Impact / Re-Reasoning", status: "pending", summary: "Requirement changes will trigger impact analysis and selective reruns.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
   ],
   selected_stage: { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing the architecture options.", artifact_version: 1, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: { status: "passed_with_warnings" } },
   recent_events: [

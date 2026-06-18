@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Boxes, FileText, GitCompareArrows, Home, Landmark, Search, ShieldCheck } from "lucide-react";
+import { Activity, BookOpen, Boxes, FileText, GitCompareArrows, Home, Landmark, Search, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const commandItems = [
   { label: "Command Center", href: "/", icon: Home },
+  { label: "Architecture Libraries", href: "/library", icon: BookOpen },
 ];
 
 const sessionItems = [

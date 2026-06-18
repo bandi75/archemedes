@@ -1,7 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { SessionActions } from "@/components/hero/session-actions";
 import { PageHeader } from "@/components/shared/page-header";
-import { SessionContextBanner } from "@/components/shared/session-context-banner";
 import { StatusBadge } from "@/components/shared/status-badge";
 
 export default function IntakePage() {
@@ -9,13 +7,30 @@ export default function IntakePage() {
     <AppShell>
       <div className="space-y-6">
         <PageHeader
-          breadcrumb={["Workbench", "Intake"]}
-          title="Intake Workspace"
-          description="Dedicated entry point for creating an architecture session and starting the guided pipeline."
-          badges={[{ label: "Session entry", variant: "info" }]}
+          breadcrumb={["Command Center", "New Session"]}
+          title="New architecture session"
+          description="Capture the business need, choose organization/library context, clarify missing details, then create the session."
+          badges={[
+            { label: "No session created yet", variant: "neutral" },
+            { label: "Creation mode", variant: "info" },
+          ]}
         />
-        <SessionContextBanner stage="Intake" />
-        <SessionActions />
+        <section className="rounded-lg border border-border bg-panel p-4 shadow-panel">
+          <div className="flex flex-wrap gap-2">
+            {["Save draft", "Ask clarifying questions", "Create session", "Create and start pipeline", "Cancel"].map((action, index) => (
+              <button
+                key={action}
+                className={index === 3
+                  ? "inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-white"
+                  : "inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink"}
+                type="button"
+              >
+                {action}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-sm text-ink-muted">Pipeline controls appear after a session exists and the user lands on Pipeline.</p>
+        </section>
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
           <div className="rounded-lg border border-border bg-panel p-5 shadow-panel">
             <h2 className="text-base font-semibold text-ink">Guided intake conversation</h2>

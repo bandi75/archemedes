@@ -492,3 +492,10 @@ Proceed with the React MVP as the primary frontend path only when all of the fol
 - Added visible session context to session-scoped pages and improved Command Center, Intake, Options, Evidence, Artifacts, Diagrams, History, Socrates, Patterns, Requirements, and Change Impact surfaces.
 - Replaced Options raw JSON score display with score bars and selection/assumption context.
 - Added planned `R4-T08` Knowledge Library / Architecture Catalog and `R4-T09` user/session ownership model work.
+
+### Intake Pipeline Split - 2026-06-18 12:00 +05:30
+
+- Split Intake creation mode from Pipeline controls by removing run/pause/resume/retry/change actions from the new-session Intake page.
+- Updated Command Center links, copy, and cards so New Session opens `/sessions/new`, product-facing cards are clickable, and internal placeholder drawer content is removed.
+- Expanded mock Pipeline to show Intake first plus all forward stages, including ADR, HLD, Mini WAF Review, Final Evidence Audit, and Change Impact / Re-Reasoning.
+- Added global Architecture Libraries route/navigation outside the Session Workspace.
