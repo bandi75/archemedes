@@ -51,10 +51,20 @@ export function LiveEventsPanel({ sessionId, initialEvents }: LiveEventsPanelPro
               <p className="text-sm font-medium text-ink">{event.message}</p>
               <span className="shrink-0 text-xs text-ink-subtle">{event.percent ?? 0}%</span>
             </div>
-            <p className="mt-1 text-xs text-ink-muted">{event.event_type}</p>
+            <p className="mt-1 text-xs text-ink-muted">
+              {formatEventTime(event.timestamp)} | {event.stage ?? "session"} | {event.event_type}
+            </p>
           </li>
         ))}
       </ol>
     </section>
   );
+}
+
+function formatEventTime(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
 }

@@ -5,6 +5,7 @@ export type StageRow = {
   stage: string;
   label: string;
   status: string;
+  stage_run_id?: string | null;
   summary: string;
   artifact_version?: number | null;
   last_updated_at?: string | null;

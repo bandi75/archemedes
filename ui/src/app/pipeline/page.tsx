@@ -5,11 +5,12 @@ import { StageList } from "@/components/hero/stage-list";
 import { PageHeader } from "@/components/shared/page-header";
 import { MetricCard } from "@/components/shared/metric-card";
 import { getPipelineView } from "@/lib/api";
-import { Activity, CheckCircle2, Clock3 } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Clock3 } from "lucide-react";
 
 export default async function PipelinePage() {
   const view = await getPipelineView();
   const completed = view.stages.filter((stage) => stage.status === "completed").length;
+  const openActions = view.stages.filter((stage) => stage.status === "failed" || stage.quality_gate?.status === "passed_with_warnings").length;
   const sessionTitle = view.session?.title ?? "Active architecture session";
 
   return (
@@ -24,11 +25,12 @@ export default async function PipelinePage() {
             { label: `Mode: ${view.session?.mode ?? "live"}`, variant: "neutral" },
           ]}
         />
-        <SessionActions />
-        <section className="grid gap-4 md:grid-cols-3">
+        <SessionActions sessionId={view.session_id} selectedStage={view.selected_stage} stages={view.stages} />
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Completed stages" value={`${completed}/${view.stages.length}`} trend="Screen-ready timeline" icon={CheckCircle2} tone="success" />
           <MetricCard label="Current stage" value={view.selected_stage.label} trend={view.selected_stage.status} icon={Activity} />
           <MetricCard label="Recent events" value={String(view.recent_events.length)} trend="Snapshot then stream" icon={Clock3} tone="teal" />
+          <MetricCard label="Open actions" value={String(openActions)} trend="Warnings or failures" icon={AlertTriangle} tone={openActions > 0 ? "warning" : "success"} />
         </section>
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
           <StageList stages={view.stages} />

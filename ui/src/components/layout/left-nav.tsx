@@ -31,6 +31,7 @@ function isActive(pathname: string, href: string) {
 
 export function LeftNav() {
   const pathname = usePathname();
+  const isCreatingSession = pathname.startsWith("/sessions/new");
 
   return (
     <aside className="hidden border-r border-border bg-panel/95 px-4 py-5 lg:block">
@@ -55,9 +56,11 @@ export function LeftNav() {
         </div>
 
         <div>
-          <p className="px-3 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Session Workspace</p>
+          <p className="px-3 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+            {isCreatingSession ? "Session Creation" : "Session Workspace"}
+          </p>
           <div className="mt-2 space-y-1">
-            {sessionItems.map((item) => (
+            {(isCreatingSession ? [{ label: "New Session", href: "/sessions/new", icon: FileText }] : sessionItems).map((item) => (
               <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} />
             ))}
           </div>

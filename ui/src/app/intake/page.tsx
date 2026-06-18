@@ -7,20 +7,18 @@ export default function IntakePage() {
     <AppShell>
       <div className="space-y-6">
         <PageHeader
-          breadcrumb={["Command Center", "New Session"]}
-          title="New architecture session"
-          description="Capture the business need, choose organization/library context, clarify missing details, then create the session."
-          badges={[
-            { label: "No session created yet", variant: "neutral" },
-            { label: "Creation mode", variant: "info" },
-          ]}
+          breadcrumb={["Session Workspace", "Intake"]}
+          title="Intake Stage Detail"
+          description="Review the original business need, clarifications, session setup metadata, and readiness for requirements extraction."
+          badges={[{ label: "Stage 1", variant: "info" }]}
         />
+        <SessionContextCard />
         <section className="rounded-lg border border-border bg-panel p-4 shadow-panel">
           <div className="flex flex-wrap gap-2">
-            {["Save draft", "Ask clarifying questions", "Create session", "Create and start pipeline", "Cancel"].map((action, index) => (
+            {["Answer clarification", "Update business need", "Mark intake ready", "Return to pipeline"].map((action, index) => (
               <button
                 key={action}
-                className={index === 3
+                className={index === 2
                   ? "inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-white"
                   : "inline-flex h-9 items-center rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink"}
                 type="button"
@@ -29,7 +27,7 @@ export default function IntakePage() {
               </button>
             ))}
           </div>
-          <p className="mt-3 text-sm text-ink-muted">Pipeline controls appear after a session exists and the user lands on Pipeline.</p>
+          <p className="mt-3 text-sm text-ink-muted">Pipeline run controls stay on Pipeline. This page explains and edits Intake outputs.</p>
         </section>
         <section className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
           <div className="rounded-lg border border-border bg-panel p-5 shadow-panel">
@@ -80,5 +78,15 @@ export default function IntakePage() {
         </section>
       </div>
     </AppShell>
+  );
+}
+
+function SessionContextCard() {
+  return (
+    <section className="rounded-lg border border-border bg-panel px-5 py-4 shadow-panel">
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">Current session</p>
+      <h2 className="mt-1 text-base font-semibold text-ink">Fintech fraud platform</h2>
+      <p className="mt-1 text-sm text-ink-muted">Current stage: Intake | Active version: v0 | Owner: current user | Mode: mock</p>
+    </section>
   );
 }

@@ -499,3 +499,17 @@ Proceed with the React MVP as the primary frontend path only when all of the fol
 - Updated Command Center links, copy, and cards so New Session opens `/sessions/new`, product-facing cards are clickable, and internal placeholder drawer content is removed.
 - Expanded mock Pipeline to show Intake first plus all forward stages, including ADR, HLD, Mini WAF Review, Final Evidence Audit, and Change Impact / Re-Reasoning.
 - Added global Architecture Libraries route/navigation outside the Session Workspace.
+
+### Create Flow Minimal - 2026-06-18 12:35 +05:30
+
+- Separated `/sessions/new` from the Intake stage detail page so new-session creation only captures title, business need, and default context.
+- Reduced new-session actions to Create session, Cancel, and Use demo template.
+- Restored `/intake` as an existing-session Stage 1 detail page with clarification/update/ready/return actions.
+- Added creation-mode navigation that hides the full Session Workspace until a session exists.
+
+### Pipeline State Controls - 2026-06-18 12:56 +05:30
+
+- Made Pipeline action controls state-aware with contextual primary labels, disabled Pause/Resume/Retry/Cancel/Submit Change states, and clearer Cancel run semantics.
+- Added Open actions metric for warnings and failures.
+- Improved stage row action labels and unavailable-stage prerequisite hints.
+- Enriched live reasoning trace rows with timestamp, stage, and event type.

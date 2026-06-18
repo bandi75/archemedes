@@ -1,9 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check, GitBranch, Pause, Play, Plus, RotateCcw, Square, StepForward } from "lucide-react";
+import type { StageRow } from "@/lib/view-models";
 
 const API_URL = process.env.NEXT_PUBLIC_ARCHIMEDES_API_URL ?? "http://localhost:8000/api/v1";
+
+type SessionActionsProps = {
+  sessionId: string;
+  stages: StageRow[];
+  selectedStage: StageRow;
+};
 
 type ActionState = {
   sessionId?: string;
@@ -13,24 +21,39 @@ type ActionState = {
   message: string;
 };
 
-export function SessionActions() {
-  const [state, setState] = useState<ActionState>({ message: "Ready" });
+export function SessionActions({ sessionId, stages, selectedStage }: SessionActionsProps) {
+  const router = useRouter();
+  const [state, setState] = useState<ActionState>({
+    sessionId,
+    currentStage: selectedStage.stage,
+    stageRunId: selectedStage.stage_run_id ?? undefined,
+    message: "Ready",
+  });
+  const failedStage = stages.find((stage) => stage.status === "failed");
+  const runningStage = stages.find((stage) => stage.status === "running");
+  const pausedStage = stages.find((stage) => stage.status === "paused");
+  const nextStage = stages.find((stage) => !["completed", "skipped"].includes(stage.status));
+  const requirementsDone = stages.some((stage) => stage.stage === "requirements_extraction" && stage.status === "completed");
+  const optionsDone = stages.some((stage) => stage.stage === "options_generation" && stage.status === "completed");
+  const allComplete = stages.every((stage) => ["completed", "skipped"].includes(stage.status));
+  const canSubmitChange = requirementsDone || optionsDone || allComplete;
+  const canPause = Boolean(runningStage);
+  const canResume = Boolean(pausedStage);
+  const canRetry = Boolean(failedStage);
+  const canCancel = Boolean(runningStage || state.stageRunId);
+  const primaryLabel = getPrimaryLabel({ failedStage, pausedStage, runningStage, nextStage, allComplete });
+  const primaryDisabled = Boolean(runningStage || allComplete) && !failedStage && !pausedStage;
 
-  async function createSession() {
-    try {
-      const response = await fetch(`${API_URL}/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "React hero demo",
-          business_need: "Design a real-time fraud detection platform on Azure for 10K TPS with PCI-DSS constraints.",
-        }),
-      });
-      const payload = await response.json();
-      setState({ sessionId: payload.session_id, currentStage: payload.current_stage, message: "Session created" });
-    } catch {
-      setState({ message: "API unavailable; mock UI remains active" });
+  async function runPrimary() {
+    if (failedStage) {
+      await retryStage();
+      return;
     }
+    if (pausedStage) {
+      await resumePipeline();
+      return;
+    }
+    await runStage();
   }
 
   async function runStage() {
@@ -141,25 +164,25 @@ export function SessionActions() {
   return (
     <div className="rounded-lg border border-border bg-panel p-4 shadow-panel">
       <div className="flex flex-wrap gap-2">
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={runStage} type="button">
-          <StepForward className="h-4 w-4" aria-hidden="true" /> Run next
+        <button className={buttonClass("primary")} disabled={primaryDisabled} onClick={runPrimary} title="Runs the next eligible stage in this session." type="button">
+          <StepForward className="h-4 w-4" aria-hidden="true" /> {primaryLabel}
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={pausePipeline} type="button">
+        <button className={buttonClass()} disabled={!canPause} onClick={pausePipeline} title={canPause ? "Pause after the current safe boundary." : "Available only while a stage is running."} type="button">
           <Pause className="h-4 w-4" aria-hidden="true" /> Pause
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={resumePipeline} type="button">
+        <button className={buttonClass()} disabled={!canResume} onClick={resumePipeline} title={canResume ? "Resume from the current or next eligible stage." : "Available only when the pipeline is paused."} type="button">
           <Play className="h-4 w-4" aria-hidden="true" /> Resume
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={retryStage} type="button">
-          <RotateCcw className="h-4 w-4" aria-hidden="true" /> Retry
+        <button className={buttonClass()} disabled={!canRetry} onClick={retryStage} title={canRetry ? "Retry the latest failed stage." : "Available only when a stage has failed."} type="button">
+          <RotateCcw className="h-4 w-4" aria-hidden="true" /> Retry failed stage
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={cancelStageRun} type="button">
-          <Square className="h-4 w-4" aria-hidden="true" /> Cancel
+        <button className={buttonClass("danger")} disabled={!canCancel} onClick={cancelStageRun} title={canCancel ? "Cancel the current running stage/run." : "Available only while a run is active."} type="button">
+          <Square className="h-4 w-4" aria-hidden="true" /> Cancel run
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm font-medium text-ink" onClick={submitChange} type="button">
+        <button className={buttonClass()} disabled={!canSubmitChange} onClick={submitChange} title={canSubmitChange ? "Submit a requirement or design change for impact analysis." : "Available after initial requirements are captured."} type="button">
           <GitBranch className="h-4 w-4" aria-hidden="true" /> Submit change
         </button>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-panel px-3 text-sm font-medium text-ink-muted" onClick={createSession} type="button">
+        <button className={buttonClass("secondary")} onClick={() => router.push("/sessions/new")} type="button">
           <Plus className="h-4 w-4" aria-hidden="true" /> New session
         </button>
       </div>
@@ -170,4 +193,49 @@ export function SessionActions() {
       </p>
     </div>
   );
+}
+
+function buttonClass(tone: "default" | "primary" | "secondary" | "danger" = "default") {
+  const base = "inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45";
+  if (tone === "primary") {
+    return `${base} border-accent bg-accent text-white hover:bg-ink`;
+  }
+  if (tone === "danger") {
+    return `${base} border-danger/20 bg-surface text-danger hover:border-danger/40`;
+  }
+  if (tone === "secondary") {
+    return `${base} border-border bg-panel text-ink-muted hover:text-ink`;
+  }
+  return `${base} border-border bg-surface text-ink hover:border-accent/40`;
+}
+
+function getPrimaryLabel({
+  failedStage,
+  pausedStage,
+  runningStage,
+  nextStage,
+  allComplete,
+}: {
+  failedStage?: StageRow;
+  pausedStage?: StageRow;
+  runningStage?: StageRow;
+  nextStage?: StageRow;
+  allComplete: boolean;
+}) {
+  if (failedStage) {
+    return "Retry failed stage";
+  }
+  if (pausedStage) {
+    return "Resume";
+  }
+  if (runningStage) {
+    return "View current stage";
+  }
+  if (allComplete) {
+    return "Architecture package ready";
+  }
+  if (!nextStage || nextStage.stage === "intake") {
+    return "Start intake";
+  }
+  return `Run ${nextStage.label.toLowerCase()}`;
 }
