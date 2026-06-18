@@ -410,6 +410,15 @@ async def test_react_view_model_and_event_endpoints():
         package = await client.get(f"/api/v1/sessions/{session_id}/artifacts/package-view")
         events = await client.get(f"/api/v1/sessions/{session_id}/events")
         stream = await client.get(f"/api/v1/sessions/{session_id}/events/stream")
+        first_event_id = events.json()["items"][0]["event_id"]
+        replay = await client.get(
+            f"/api/v1/sessions/{session_id}/events",
+            params={"after_event_id": first_event_id},
+        )
+        replay_stream = await client.get(
+            f"/api/v1/sessions/{session_id}/events/stream",
+            headers={"Last-Event-ID": first_event_id},
+        )
 
     assert overview.status_code == 200
     assert overview.json()["session"]["session_id"] == session_id
@@ -424,9 +433,17 @@ async def test_react_view_model_and_event_endpoints():
     assert "artifacts" in package.json()
     assert events.status_code == 200
     assert events.json()["items"]
+    assert events.json()["last_event_id"]
+    assert all("severity" in event and "payload" in event for event in events.json()["items"])
+    assert replay.status_code == 200
+    assert first_event_id not in [event["event_id"] for event in replay.json()["items"]]
     assert stream.status_code == 200
     assert stream.headers["content-type"].startswith("text/event-stream")
+    assert stream.headers["cache-control"] == "no-cache"
+    assert "retry: 3000" in stream.text
     assert "event:" in stream.text
+    assert replay_stream.status_code == 200
+    assert f"id: {first_event_id}" not in replay_stream.text
 
 
 async def test_react_pipeline_control_endpoints():
@@ -469,6 +486,41 @@ async def test_react_pipeline_control_endpoints():
     assert cancel.json()["status"] == "cancel_requested"
 
 
+async def test_full_workbench_view_and_resource_endpoints():
+    async with _test_client() as client:
+        create_response = await client.post(
+            "/api/v1/sessions",
+            json={"business_need": "Build a real-time fraud detection platform"},
+        )
+        session_id = create_response.json()["session_id"]
+        await client.post(
+            f"/api/v1/sessions/{session_id}/messages",
+            json={"message": "Build a real-time fraud detection platform for fintech."},
+        )
+
+        requirements = await client.get(f"/api/v1/sessions/{session_id}/requirements/view")
+        patterns = await client.get(f"/api/v1/sessions/{session_id}/patterns/view")
+        options = await client.get(f"/api/v1/sessions/{session_id}/options/view")
+        artifacts = await client.get(f"/api/v1/sessions/{session_id}/artifacts")
+        claims = await client.get(f"/api/v1/sessions/{session_id}/claims")
+        claim_id = claims.json()["items"][0]["claim_id"]
+        claim = await client.get(f"/api/v1/sessions/{session_id}/claims/{claim_id}")
+        audit = await client.get(f"/api/v1/sessions/{session_id}/audits/evidence/latest")
+
+    assert requirements.status_code == 200
+    assert "functional_requirements" in requirements.json()
+    assert patterns.status_code == 200
+    assert "primary_patterns" in patterns.json()
+    assert options.status_code == 200
+    assert "options" in options.json()
+    assert artifacts.status_code == 200
+    assert artifacts.json()["items"]
+    assert claim.status_code == 200
+    assert claim.json()["claim_id"] == claim_id
+    assert audit.status_code == 200
+    assert audit.json()["total_claims"] >= 1
+
+
 async def test_change_impact_view_endpoint():
     app = _test_app()
     async with _test_client(app) as client:
@@ -495,6 +547,73 @@ async def test_change_impact_view_endpoint():
     assert impact.status_code == 200
     assert impact.json()["change_event"]["change_event_id"] == change_event_id
     assert "options_generation" in impact.json()["impact"]["impacted_stages"]
+
+
+async def test_react_delivery_p0_p1_endpoint_checklist():
+    async with _test_client() as client:
+        create_response = await client.post(
+            "/api/v1/sessions",
+            json={"business_need": "Build a real-time fraud detection platform"},
+        )
+        session_id = create_response.json()["session_id"]
+        await client.post(
+            f"/api/v1/sessions/{session_id}/messages",
+            json={"message": "Generate the first architecture artifact"},
+        )
+        claims = await client.get(f"/api/v1/sessions/{session_id}/claims")
+        claim_id = claims.json()["items"][0]["claim_id"]
+        validate = await client.post(
+            f"/api/v1/sessions/{session_id}/claims/{claim_id}/validate",
+            json={"accepted": True, "comment": "Confirmed for endpoint checklist."},
+        )
+        change = await client.post(
+            f"/api/v1/sessions/{session_id}/changes",
+            json={
+                "changed_field": "throughput",
+                "old_value_summary": "10K TPS",
+                "new_value_summary": "100K TPS",
+                "user_message": "Increase throughput to 100K TPS",
+            },
+        )
+        change_event_id = change.json()["change_event_id"]
+        responses = [
+            create_response,
+            await client.get(f"/api/v1/sessions/{session_id}"),
+            await client.get(f"/api/v1/sessions/{session_id}/overview"),
+            await client.get(f"/api/v1/sessions/{session_id}/pipeline"),
+            await client.get(f"/api/v1/sessions/{session_id}/pipeline/view"),
+            await client.post(f"/api/v1/sessions/{session_id}/pipeline/run", json={}),
+            await client.post(f"/api/v1/sessions/{session_id}/pipeline/run-next", json={}),
+            await client.get(f"/api/v1/sessions/{session_id}/events"),
+            await client.get(f"/api/v1/sessions/{session_id}/events/stream"),
+            await client.get(f"/api/v1/sessions/{session_id}/socrates/view"),
+            await client.get(f"/api/v1/sessions/{session_id}/evidence/view"),
+            await client.get(f"/api/v1/sessions/{session_id}/artifacts/package-view"),
+            validate,
+            change,
+            await client.get(
+                f"/api/v1/sessions/{session_id}/changes/{change_event_id}/impact-view"
+            ),
+            await client.post(
+                f"/api/v1/sessions/{session_id}/changes/{change_event_id}/rereason",
+                json={},
+            ),
+            await client.get(f"/api/v1/sessions/{session_id}/diffs"),
+            await client.get("/health"),
+            await client.get("/health/ready"),
+            await client.get("/api/v1/sessions"),
+            await client.get(f"/api/v1/sessions/{session_id}/requirements/view"),
+            await client.get(f"/api/v1/sessions/{session_id}/options/view"),
+            await client.get(f"/api/v1/sessions/{session_id}/patterns/view"),
+            await client.get(f"/api/v1/sessions/{session_id}/artifacts"),
+            await client.get(f"/api/v1/sessions/{session_id}/artifacts/intake/latest"),
+            claims,
+            await client.get(f"/api/v1/sessions/{session_id}/claims/{claim_id}"),
+            await client.get(f"/api/v1/sessions/{session_id}/evidence"),
+            await client.get(f"/api/v1/sessions/{session_id}/audits/evidence/latest"),
+        ]
+
+    assert all(response.status_code < 400 for response in responses)
 
 
 async def test_unknown_session_returns_structured_not_found():

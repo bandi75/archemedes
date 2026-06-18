@@ -208,8 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def versioned_health() -> dict[str, str]:
         return health_payload()
 
-    @app.get("/api/v1/health/ready")
-    async def readiness() -> dict[str, str | list[str]]:
+    async def readiness_payload() -> dict[str, str | list[str]]:
         missing = (
             _missing_required_env(settings.required_env_vars)
             if settings.validate_required_env
@@ -224,6 +223,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
         return {"status": "ready", "service": settings.service_name, "missing": []}
+
+    @app.get("/health/ready")
+    async def readiness() -> dict[str, str | list[str]]:
+        return await readiness_payload()
+
+    @app.get("/api/v1/health/ready")
+    async def versioned_readiness() -> dict[str, str | list[str]]:
+        return await readiness_payload()
 
     return app
 

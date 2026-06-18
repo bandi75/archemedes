@@ -1,6 +1,15 @@
 import type { QualityGateStatus } from "@/components/shared/quality-gate-badge";
 import type { StatusBadgeVariant } from "@/components/shared/status-badge";
-import type { ArtifactPackageView, ChangeImpactView, EvidenceView, PipelineView, SocratesView } from "@/lib/view-models";
+import type {
+  ArtifactPackageView,
+  ChangeImpactView,
+  EvidenceView,
+  OptionsView,
+  PatternsView,
+  PipelineView,
+  RequirementsView,
+  SocratesView,
+} from "@/lib/view-models";
 
 export const mockSessions: Array<{
   id: string;
@@ -106,6 +115,67 @@ export const mockSocratesView: SocratesView = {
     { persona: "Delivery Lead", summary: "Managed services keep the first release achievable within the hackathon/demo timeline." },
     { persona: "Devil's Advocate", summary: "Replay, poison events, and model rollback paths are still under-specified." },
   ],
+};
+
+export const mockRequirementsView: RequirementsView = {
+  session_id: "session-demo",
+  summary: "Real-time fraud platform for fintech transaction scoring with PCI-DSS constraints and 99.95% availability.",
+  functional_requirements: [
+    { id: "fr-1", description: "Ingest transaction events in real time.", priority: "must" },
+    { id: "fr-2", description: "Score transactions and publish fraud decisions.", priority: "must" },
+    { id: "fr-3", description: "Expose investigation events for downstream review.", priority: "should" },
+  ],
+  non_functional_requirements: [
+    { id: "nfr-1", metric: "Throughput", target: "10K TPS initial, 100K TPS change scenario" },
+    { id: "nfr-2", metric: "Availability", target: "99.95%" },
+    { id: "nfr-3", metric: "Compliance", target: "PCI-DSS scoped controls" },
+  ],
+  constraints: [
+    { id: "c-1", description: "Azure-first managed services preferred." },
+    { id: "c-2", description: "No raw cardholder data in analytics stores." },
+  ],
+  assumptions: [
+    { claim_id: "claim-2", claim: "PCI scope is limited to tokenized transaction events.", validation_question: "Confirm tokenization boundary.", requires_user_validation: true },
+  ],
+  open_questions: ["What is the required decision latency?", "How long must raw events be retained?"],
+  quality_gate: { status: "passed_with_warnings" },
+};
+
+export const mockPatternsView: PatternsView = {
+  session_id: "session-demo",
+  primary_patterns: ["real_time_streaming", "event_driven_architecture"],
+  signals: ["10K TPS", "fraud scoring", "low-latency decisions", "PCI-DSS"],
+  recommended_services: ["Azure Event Hubs", "Azure Stream Analytics", "Azure Functions", "Azure Cosmos DB", "Azure Monitor"],
+  pattern_specific_nfrs: ["Partition strategy", "Replay window", "Backpressure handling", "Poison event isolation"],
+  quality_gate: { status: "passed" },
+};
+
+export const mockOptionsView: OptionsView = {
+  session_id: "session-demo",
+  selected_option_id: "option-managed-streaming",
+  options: [
+    {
+      option_id: "option-managed-streaming",
+      name: "Managed Azure Streaming",
+      summary: "Event Hubs, Stream Analytics, Functions, Cosmos DB, and Monitor.",
+      scores: { cost: 7, complexity: 8, scalability: 8, delivery: 9 },
+      risks: ["Partition hot spots", "PCI boundary ambiguity"],
+    },
+    {
+      option_id: "option-aks-streaming",
+      name: "AKS Stream Processors",
+      summary: "Custom scoring workers on AKS with Event Hubs and Cosmos DB.",
+      scores: { cost: 5, complexity: 5, scalability: 9, delivery: 5 },
+      risks: ["Higher operational burden", "Longer delivery path"],
+    },
+  ],
+  rejected_options: [{ name: "Single VM queue processor", reason: "Weak availability and scale posture." }],
+  tradeoff_matrix: [
+    { criterion: "Time to market", best: "Managed Azure Streaming" },
+    { criterion: "Operational control", best: "AKS Stream Processors" },
+  ],
+  cost_estimate: { expected_monthly_usd: 8400, sensitivity: "high" },
+  quality_gate: { status: "passed_with_warnings" },
 };
 
 export const mockEvidenceView: EvidenceView = {

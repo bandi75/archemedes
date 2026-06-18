@@ -45,6 +45,10 @@ class ArtifactDiffResponse(BaseModel):
     modified: dict[str, dict[str, Any]]
 
 
+class ArtifactListResponse(BaseModel):
+    items: list[VersionedArtifact]
+
+
 class PipelineRunRequest(BaseModel):
     mode: str = "standard"
     allow_warning_override: bool = False
@@ -248,6 +252,36 @@ async def cancel_stage_run(
                 "status": "cancel_requested",
             }
     raise api_error(404, f"Stage run not found: {stage_run_id}", "stage_run_not_found")
+
+
+@router.get("/artifacts")
+async def list_artifacts(
+    session_id: str,
+    stage: StageName | None = Query(default=None),
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> ArtifactListResponse:
+    _require_session(storage, session_id)
+    if hasattr(storage, "artifacts"):
+        items = [
+            artifact
+            for (artifact_session_id, artifact_stage, _), artifact in storage.artifacts.items()
+            if artifact_session_id == session_id and (stage is None or artifact_stage == stage.value)
+        ]
+    else:
+        stages = [stage] if stage is not None else list(StageName)
+        items = [
+            artifact
+            for artifact_stage in stages
+            if (
+                artifact := storage.read_latest_artifact(
+                    session_id,
+                    artifact_stage.value,
+                )
+            )
+            is not None
+        ]
+    items.sort(key=lambda artifact: (_value(artifact.stage), artifact.version))
+    return ArtifactListResponse(items=items)
 
 
 @router.get("/artifacts/{stage}/latest")

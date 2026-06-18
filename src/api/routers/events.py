@@ -26,6 +26,15 @@ def _iso(value: Any) -> str:
     return str(value)
 
 
+def _events_after(events: list[dict[str, Any]], event_id: str | None) -> list[dict[str, Any]]:
+    if not event_id:
+        return events
+    ids = [event["event_id"] for event in events]
+    if event_id not in ids:
+        return events
+    return events[ids.index(event_id) + 1 :]
+
+
 def build_session_events(storage: InMemoryArchimedesStorage, session_id: str) -> list[dict[str, Any]]:
     session = storage.read_session(session_id)
     if session is None:
@@ -35,6 +44,7 @@ def build_session_events(storage: InMemoryArchimedesStorage, session_id: str) ->
     for stage, execution in session.stage_executions.items():
         stage_value = _value(stage)
         timestamp = execution.completed_at or execution.started_at or session.updated_at
+        gate = session.quality_gates.get(stage)
         events.append(
             {
                 "event_id": f"evt_{stage_value}_{_value(execution.status)}",
@@ -42,8 +52,14 @@ def build_session_events(storage: InMemoryArchimedesStorage, session_id: str) ->
                 "session_id": session_id,
                 "stage": stage_value,
                 "stage_run_id": execution.stage_run_id,
+                "severity": "info",
                 "message": f"{stage_value.replace('_', ' ').title()} is {_value(execution.status)}.",
                 "percent": 100 if _value(execution.status) == "completed" else 0,
+                "payload": {
+                    "status": _value(execution.status),
+                    "quality_gate": gate.model_dump(mode="json") if gate else None,
+                    "artifact_version": session.latest_artifact_versions.get(stage),
+                },
                 "timestamp": _iso(timestamp),
             }
         )
@@ -56,6 +72,7 @@ def build_session_events(storage: InMemoryArchimedesStorage, session_id: str) ->
                 "session_id": session_id,
                 "stage": "rereasoning",
                 "stage_run_id": None,
+                "severity": "info",
                 "message": event.user_message or event.new_value_summary or event.changed_field,
                 "percent": 100,
                 "timestamp": _iso(event.timestamp),
@@ -77,30 +94,40 @@ async def list_session_events(
     limit: int = Query(default=100, ge=1, le=500),
     storage: InMemoryArchimedesStorage = Depends(get_storage),
 ) -> dict[str, Any]:
-    events = build_session_events(storage, session_id)
-    if after_event_id:
-        ids = [event["event_id"] for event in events]
-        if after_event_id in ids:
-            events = events[ids.index(after_event_id) + 1 :]
-    return {"items": events[-limit:], "total": len(events[-limit:])}
+    events = _events_after(build_session_events(storage, session_id), after_event_id)
+    items = events[-limit:]
+    return {
+        "items": items,
+        "total": len(events),
+        "has_more": len(events) > len(items),
+        "last_event_id": items[-1]["event_id"] if items else after_event_id,
+    }
 
 
 @router.get("/stream")
 async def stream_session_events(
     session_id: str,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    after_event_id: str | None = None,
     storage: InMemoryArchimedesStorage = Depends(get_storage),
 ) -> StreamingResponse:
-    events = build_session_events(storage, session_id)
-    if last_event_id:
-        ids = [event["event_id"] for event in events]
-        if last_event_id in ids:
-            events = events[ids.index(last_event_id) + 1 :]
+    events = _events_after(
+        build_session_events(storage, session_id),
+        last_event_id or after_event_id,
+    )
 
     async def event_stream():
+        yield "retry: 3000\n\n"
         for event in events:
             yield f"id: {event['event_id']}\nevent: {event['event_type']}\ndata: {json.dumps(event, default=str)}\n\n"
         yield ": heartbeat\n\n"
         await asyncio.sleep(0)
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

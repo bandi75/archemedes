@@ -3,12 +3,16 @@ import { cn } from "@/lib/cn";
 
 const navItems = [
   { label: "Home", href: "/", icon: Home, active: true },
+  { label: "Intake", href: "/intake", icon: FileText, active: false },
   { label: "Pipeline", href: "/pipeline", icon: Activity, active: false },
-  { label: "Requirements", href: "/pipeline", icon: FileText, active: false },
-  { label: "Options", href: "/pipeline", icon: Boxes, active: false },
+  { label: "Requirements", href: "/requirements", icon: FileText, active: false },
+  { label: "Patterns", href: "/patterns", icon: Boxes, active: false },
+  { label: "Options", href: "/options", icon: Boxes, active: false },
   { label: "Socrates", href: "/socrates", icon: Landmark, active: false },
   { label: "Evidence", href: "/evidence", icon: ShieldCheck, active: false },
   { label: "Artifacts", href: "/artifacts", icon: FileText, active: false },
+  { label: "Diagrams", href: "/diagrams", icon: Boxes, active: false },
+  { label: "History", href: "/history", icon: Activity, active: false },
   { label: "Change Impact", href: "/changes", icon: GitCompareArrows, active: false },
 ];
 

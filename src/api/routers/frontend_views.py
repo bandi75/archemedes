@@ -151,6 +151,74 @@ async def get_pipeline_view(
     }
 
 
+@router.get("/requirements/view")
+async def get_requirements_view(
+    session_id: str,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    _require_session(storage, session_id)
+    artifact = storage.read_latest_artifact(session_id, StageName.REQUIREMENTS_EXTRACTION.value)
+    content = artifact.content if artifact else {}
+    claims = storage.list_claims(session_id, stage=StageName.REQUIREMENTS_EXTRACTION.value)
+    return {
+        "session_id": session_id,
+        "summary": content.get("summary", "Awaiting requirements extraction."),
+        "functional_requirements": content.get("functional_requirements", []),
+        "non_functional_requirements": content.get("non_functional_requirements", []),
+        "constraints": content.get("constraints", []),
+        "assumptions": [
+            claim.model_dump(mode="json")
+            for claim in claims
+            if _value(claim.type) == "assumption" or claim.requires_user_validation
+        ],
+        "open_questions": content.get("open_questions", []),
+        "quality_gate": artifact.quality_gate.model_dump(mode="json") if artifact else None,
+        "source_refs": [artifact.artifact_id] if artifact else [],
+    }
+
+
+@router.get("/patterns/view")
+async def get_patterns_view(
+    session_id: str,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    session = _require_session(storage, session_id)
+    artifact = storage.read_latest_artifact(session_id, StageName.PATTERN_DETECTION.value)
+    content = artifact.content if artifact else {}
+    patterns = content.get("patterns") or content.get("detected_patterns") or session.detected_patterns
+    if isinstance(patterns, dict):
+        patterns = list(patterns.values())
+    return {
+        "session_id": session_id,
+        "primary_patterns": patterns if isinstance(patterns, list) else [],
+        "signals": content.get("signals", []),
+        "recommended_services": content.get("azure_services_to_explore", content.get("recommended_services", [])),
+        "pattern_specific_nfrs": content.get("pattern_specific_nfrs", []),
+        "quality_gate": artifact.quality_gate.model_dump(mode="json") if artifact else None,
+        "source_refs": [artifact.artifact_id] if artifact else [],
+    }
+
+
+@router.get("/options/view")
+async def get_options_view(
+    session_id: str,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    _require_session(storage, session_id)
+    artifact = storage.read_latest_artifact(session_id, StageName.OPTIONS_GENERATION.value)
+    content = artifact.content if artifact else {}
+    return {
+        "session_id": session_id,
+        "options": content.get("options", []),
+        "rejected_options": content.get("rejected_options", []),
+        "tradeoff_matrix": content.get("tradeoff_matrix", []),
+        "cost_estimate": content.get("cost_estimate"),
+        "selected_option_id": content.get("selected_option_id"),
+        "quality_gate": artifact.quality_gate.model_dump(mode="json") if artifact else None,
+        "source_refs": [artifact.artifact_id] if artifact else [],
+    }
+
+
 @router.get("/socrates/view")
 async def get_socrates_view(
     session_id: str,

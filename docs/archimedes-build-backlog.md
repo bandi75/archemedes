@@ -303,19 +303,19 @@ The hero-screen implementation assumes delivery or completion of these high-prio
 
 ## React Phase 3: Full Workbench
 
-_Status: Planned_
+_Status: Completed_
 
 Backlog goal: complete the broader workbench experience described in `14-frontend-specification.md` section 22, Phase 3, using P1 resource/view APIs from `05-api-contracts-updated.md` section 26.2.
 
 | ID | Task | Depends On | Output | Status | Summary |
 |---|---|---|---|---|---|
-| `R3-T01` | Implement Intake Workspace | `R2` foundation and session flows | Intake screen | Planned | Build the intake-specific authoring and session entry experience as a dedicated workbench screen. |
-| `R3-T02` | Implement Requirements Review | Requirements view support | Requirements screen backed by `GET /api/v1/sessions/{session_id}/requirements/view` | Planned | Render extracted requirements, assumptions, open questions, and validation actions in screen-ready form. |
-| `R3-T03` | Implement Pattern Explorer | Patterns view support | Pattern screen backed by `GET /api/v1/sessions/{session_id}/patterns/view` | Planned | Render detected patterns, signals, confidence, and suggested Azure service directions. |
-| `R3-T04` | Implement Options Board | Options view support | Options screen backed by `GET /api/v1/sessions/{session_id}/options/view` | Planned | Render option cards, comparison matrix, scores, and option drill-down interactions. |
-| `R3-T05` | Implement Mermaid Diagram Viewer and version history | Artifact/version endpoints | Diagram viewer and artifact history UX | Planned | Expand HLD viewing beyond the hero package view and support version-aware artifact exploration. |
-| `R3-T06` | Integrate P1 resource APIs | `R3-T01` through `R3-T05` | Full workbench data integration | Planned | Use `GET /sessions`, `GET /artifacts`, `GET /artifacts/{stage}/latest`, `GET /claims`, `GET /claims/{claim_id}`, `GET /evidence`, and `GET /audits/evidence/latest` for deeper drill-down and history flows. |
-| `R3-T07` | Validate full-workbench acceptance criteria | `R3-T01` through `R3-T06` | Full workbench readiness | Planned | Verify workbench behavior against frontend section 23 and API section 28. |
+| `R3-T01` | Implement Intake Workspace | `R2` foundation and session flows | Intake screen | Completed | Added `/intake` workspace with session creation controls and business-need draft surface. |
+| `R3-T02` | Implement Requirements Review | Requirements view support | Requirements screen backed by `GET /api/v1/sessions/{session_id}/requirements/view` | Completed | Added `/requirements` screen and backend requirements view model with requirements, constraints, assumptions, open questions, and quality gate state. |
+| `R3-T03` | Implement Pattern Explorer | Patterns view support | Pattern screen backed by `GET /api/v1/sessions/{session_id}/patterns/view` | Completed | Added `/patterns` screen and backend patterns view model with detected patterns, signals, service directions, and pattern-specific NFRs. |
+| `R3-T04` | Implement Options Board | Options view support | Options screen backed by `GET /api/v1/sessions/{session_id}/options/view` | Completed | Added `/options` screen and backend options view model with option cards, rejected options, tradeoff data, cost estimate, and selected option. |
+| `R3-T05` | Implement Mermaid Diagram Viewer and version history | Artifact/version endpoints | Diagram viewer and artifact history UX | Completed | Added `/diagrams` Mermaid source viewer and `/history` version-history screen using artifact package and artifact list data. |
+| `R3-T06` | Integrate P1 resource APIs | `R3-T01` through `R3-T05` | Full workbench data integration | Completed | Added `GET /artifacts`, `GET /claims/{claim_id}`, `GET /audits/evidence/latest`, and consumed P1 view/resource APIs from the React data layer. |
+| `R3-T07` | Validate full-workbench acceptance criteria | `R3-T01` through `R3-T06` | Full workbench readiness | Completed | Validated Phase 3 backend endpoints with pytest and React full-workbench routes with `npm run typecheck`. |
 
 ---
 
@@ -337,15 +337,15 @@ Backlog goal: productize the new frontend and align backend/frontend operational
 
 ## Backend/API Work Needed for React Delivery
 
-These items are active even though the FastAPI foundation is already implemented.
+These items track the backend/API closure needed for the React MVP. R4 still owns product hardening such as auth, export, accessibility, frontend automation, and live-event stress testing.
 
 | ID | Task | Status | Summary |
 |---|---|---|---|
-| `B1` | Complete React view-model APIs from section 18 | Planned | Prioritize overview, pipeline view, Socrates view, evidence view, artifact package view, and change impact view. |
-| `B2` | Align event history and SSE behavior to section 11 | Planned | Ensure list-events, stream-events, replay, reconnect, and snapshot-then-stream semantics are production-ready. |
-| `B3` | Validate P0 endpoint checklist from section 26.1 | Planned | Close any gaps between current implemented routes and the React MVP-required route list. |
-| `B4` | Validate P1 endpoint checklist from section 26.2 | Planned | Support deeper workbench read models and drill-down flows. |
-| `B5` | Confirm acceptance criteria from section 28 | Planned | Use the API acceptance list as the backend exit gate for the React MVP. |
+| `B1` | Complete React view-model APIs from section 18 | Completed | Implemented overview, pipeline, requirements, patterns, options, Socrates, evidence, artifact package, change impact, and event view APIs. |
+| `B2` | Align event history and SSE behavior to section 11 | Completed | Added list-events replay cursors, SSE `Last-Event-ID`/`after_event_id` replay, retry hints, no-cache streaming headers, and structured event metadata. |
+| `B3` | Validate P0 endpoint checklist from section 26.1 | Completed | Added pytest coverage across session creation/load, pipeline status/run controls, events/SSE, hero view APIs, assumption validation, changes/rereason, diffs, and health/readiness. |
+| `B4` | Validate P1 endpoint checklist from section 26.2 | Completed | Added pytest coverage for session listing, requirements/options/patterns view models, artifact list/latest, claim detail, evidence list, and latest evidence audit. |
+| `B5` | Confirm acceptance criteria from section 28 | Completed | React MVP API acceptance is validated by targeted backend tests; remaining broader product hardening is tracked under R4. |
 
 ---
 
@@ -365,7 +365,7 @@ These items are active even though the FastAPI foundation is already implemented
 | `P8` | Post-hackathon MAF/current-state updates | Mixed |
 | `R1` | React foundation | Completed |
 | `R2` | React hero demo screens | Completed |
-| `R3` | React full workbench | Planned |
+| `R3` | React full workbench | Completed |
 | `R4` | Product hardening | Planned |
 | `B1-B5` | Backend/API closure for React | Planned |
 

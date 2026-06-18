@@ -74,6 +74,47 @@ export type ChangeImpactView = {
   diffs: unknown[];
 };
 
+export type RequirementsView = {
+  session_id: string;
+  summary: string;
+  functional_requirements: Array<Record<string, unknown>>;
+  non_functional_requirements: Array<Record<string, unknown>>;
+  constraints: Array<Record<string, unknown>>;
+  assumptions: Array<{ claim_id: string; claim: string; validation_question?: string | null; requires_user_validation?: boolean }>;
+  open_questions: string[];
+  quality_gate?: { status: QualityGateStatus } | null;
+};
+
+export type PatternsView = {
+  session_id: string;
+  primary_patterns: Array<string | Record<string, unknown>>;
+  signals: Array<string | Record<string, unknown>>;
+  recommended_services: string[];
+  pattern_specific_nfrs: string[];
+  quality_gate?: { status: QualityGateStatus } | null;
+};
+
+export type OptionsView = {
+  session_id: string;
+  options: Array<Record<string, unknown>>;
+  rejected_options: Array<Record<string, unknown>>;
+  tradeoff_matrix: Array<Record<string, unknown>>;
+  cost_estimate?: Record<string, unknown> | null;
+  selected_option_id?: string | null;
+  quality_gate?: { status: QualityGateStatus } | null;
+};
+
+export type ArtifactListView = {
+  items: Array<{
+    artifact_id: string;
+    stage: string;
+    version: number;
+    content: Record<string, unknown>;
+    quality_gate: { status: QualityGateStatus };
+    created_at: string;
+  }>;
+};
+
 export type PipelineStageMock = {
   id: string;
   name: string;

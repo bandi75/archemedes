@@ -2,10 +2,23 @@ import {
   mockArtifactPackageView,
   mockChangeImpactView,
   mockEvidenceView,
+  mockOptionsView,
+  mockPatternsView,
   mockPipelineView,
+  mockRequirementsView,
   mockSocratesView,
 } from "@/lib/mock-data";
-import type { ArtifactPackageView, ChangeImpactView, EvidenceView, PipelineView, SocratesView } from "@/lib/view-models";
+import type {
+  ArtifactListView,
+  ArtifactPackageView,
+  ChangeImpactView,
+  EvidenceView,
+  OptionsView,
+  PatternsView,
+  PipelineView,
+  RequirementsView,
+  SocratesView,
+} from "@/lib/view-models";
 
 const API_URL = process.env.NEXT_PUBLIC_ARCHIMEDES_API_URL ?? "http://localhost:8000/api/v1";
 const MOCK_DATA = process.env.NEXT_PUBLIC_ARCHIMEDES_MOCK_DATA !== "false";
@@ -35,6 +48,18 @@ export function getSocratesView(sessionId = DEFAULT_SESSION_ID): Promise<Socrate
   return getJson(`/sessions/${sessionId}/socrates/view`, mockSocratesView);
 }
 
+export function getRequirementsView(sessionId = DEFAULT_SESSION_ID): Promise<RequirementsView> {
+  return getJson(`/sessions/${sessionId}/requirements/view`, mockRequirementsView);
+}
+
+export function getPatternsView(sessionId = DEFAULT_SESSION_ID): Promise<PatternsView> {
+  return getJson(`/sessions/${sessionId}/patterns/view`, mockPatternsView);
+}
+
+export function getOptionsView(sessionId = DEFAULT_SESSION_ID): Promise<OptionsView> {
+  return getJson(`/sessions/${sessionId}/options/view`, mockOptionsView);
+}
+
 export function getEvidenceView(sessionId = DEFAULT_SESSION_ID): Promise<EvidenceView> {
   return getJson(`/sessions/${sessionId}/evidence/view`, mockEvidenceView);
 }
@@ -48,4 +73,8 @@ export function getChangeImpactView(
   changeEventId = DEFAULT_CHANGE_EVENT_ID,
 ): Promise<ChangeImpactView> {
   return getJson(`/sessions/${sessionId}/changes/${changeEventId}/impact-view`, mockChangeImpactView);
+}
+
+export function getArtifactHistory(sessionId = DEFAULT_SESSION_ID): Promise<ArtifactListView> {
+  return getJson(`/sessions/${sessionId}/artifacts`, { items: [] });
 }
