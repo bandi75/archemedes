@@ -17,7 +17,7 @@ from archimedes.orchestrator.controller import StageController
 from archimedes.storage.cosmos_client import CosmosStorageClient
 from archimedes.state.state_manager import ArchitectureStateManager
 
-from .routers import artifacts, changes, diffs, evidence, sessions
+from .routers import artifacts, changes, diffs, evidence, events, frontend_views, sessions
 from .storage import InMemoryArchimedesStorage
 
 load_dotenv()
@@ -83,8 +83,15 @@ def _build_socrates_workflow(settings: Settings, agent_factory):
     if settings.agent_runtime.strip().lower() == "maf":
         from archimedes.agents.maf_factory import MAFAgentFactory
         if isinstance(agent_factory, MAFAgentFactory):
-            from archimedes.socrates.maf_socrates import MAFSocratesWorkflow
-            return MAFSocratesWorkflow.from_maf_factory(agent_factory)
+            try:
+                from importlib.util import find_spec
+
+                if find_spec("agent_framework") is not None:
+                    from archimedes.socrates.maf_socrates import MAFSocratesWorkflow
+
+                    return MAFSocratesWorkflow.from_maf_factory(agent_factory)
+            except (ImportError, ValueError):
+                pass
     from archimedes.socrates.workflow import build_socrates_workflow
     return build_socrates_workflow()
 
@@ -155,6 +162,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(sessions.router, prefix="/api/v1")
+    app.include_router(frontend_views.router, prefix="/api/v1")
+    app.include_router(events.router, prefix="/api/v1")
     app.include_router(artifacts.router, prefix="/api/v1")
     app.include_router(evidence.router, prefix="/api/v1")
     app.include_router(changes.router, prefix="/api/v1")

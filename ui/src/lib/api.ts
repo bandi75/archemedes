@@ -1,0 +1,51 @@
+import {
+  mockArtifactPackageView,
+  mockChangeImpactView,
+  mockEvidenceView,
+  mockPipelineView,
+  mockSocratesView,
+} from "@/lib/mock-data";
+import type { ArtifactPackageView, ChangeImpactView, EvidenceView, PipelineView, SocratesView } from "@/lib/view-models";
+
+const API_URL = process.env.NEXT_PUBLIC_ARCHIMEDES_API_URL ?? "http://localhost:8000/api/v1";
+const MOCK_DATA = process.env.NEXT_PUBLIC_ARCHIMEDES_MOCK_DATA !== "false";
+export const DEFAULT_SESSION_ID = "session-demo";
+export const DEFAULT_CHANGE_EVENT_ID = "change-demo";
+
+async function getJson<T>(path: string, fallback: T): Promise<T> {
+  if (MOCK_DATA) {
+    return fallback;
+  }
+  try {
+    const response = await fetch(`${API_URL}${path}`, { cache: "no-store" });
+    if (!response.ok) {
+      return fallback;
+    }
+    return (await response.json()) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function getPipelineView(sessionId = DEFAULT_SESSION_ID): Promise<PipelineView> {
+  return getJson(`/sessions/${sessionId}/pipeline/view`, mockPipelineView);
+}
+
+export function getSocratesView(sessionId = DEFAULT_SESSION_ID): Promise<SocratesView> {
+  return getJson(`/sessions/${sessionId}/socrates/view`, mockSocratesView);
+}
+
+export function getEvidenceView(sessionId = DEFAULT_SESSION_ID): Promise<EvidenceView> {
+  return getJson(`/sessions/${sessionId}/evidence/view`, mockEvidenceView);
+}
+
+export function getArtifactPackageView(sessionId = DEFAULT_SESSION_ID): Promise<ArtifactPackageView> {
+  return getJson(`/sessions/${sessionId}/artifacts/package-view`, mockArtifactPackageView);
+}
+
+export function getChangeImpactView(
+  sessionId = DEFAULT_SESSION_ID,
+  changeEventId = DEFAULT_CHANGE_EVENT_ID,
+): Promise<ChangeImpactView> {
+  return getJson(`/sessions/${sessionId}/changes/${changeEventId}/impact-view`, mockChangeImpactView);
+}

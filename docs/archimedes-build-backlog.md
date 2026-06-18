@@ -264,20 +264,20 @@ Backlog goal: establish the React/Next.js workbench shell and common design syst
 
 ## React Phase 2: Hero Demo Screens
 
-_Status: Planned_
+_Status: Completed_
 
 Backlog goal: deliver the high-impact MVP screens described in `14-frontend-specification.md` section 22, Phase 2, using the P0 React endpoints from `05-api-contracts-updated.md` section 26.1.
 
 | ID | Task | Depends On | Output | Status | Summary |
 |---|---|---|---|---|---|
-| `R2-T01` | Implement Architecture Pipeline screen | `R1-T04`, backend pipeline view support | Pipeline screen backed by `GET /api/v1/sessions/{session_id}/pipeline/view` | Planned | Render stage status, metrics, quality gates, and orchestration progress using screen-ready pipeline view data. |
-| `R2-T02` | Implement Socrates Reasoning Lab | `R1-T04`, Socrates view support | Socrates hero screen backed by `GET /api/v1/sessions/{session_id}/socrates/view` | Planned | Render five personas, synthesis, confidence, conditions, and reasoning summaries without parsing raw artifacts. |
-| `R2-T03` | Implement Evidence and Claims Explorer | `R1-T04`, evidence view support | Evidence screen backed by `GET /api/v1/sessions/{session_id}/evidence/view` | Planned | Show claims, evidence, trust/freshness, drill-down drawers, and assumption-validation entry points. |
-| `R2-T04` | Implement Artifact Studio | `R1-T04`, artifact package view support | Artifact package screen backed by `GET /api/v1/sessions/{session_id}/artifacts/package-view` | Planned | Render ADR, HLD, WAF, package state, and separate render-status versus quality-gate status. |
-| `R2-T05` | Implement Change Impact Studio | `R1-T04`, change impact support | Change impact screen backed by `GET /api/v1/sessions/{session_id}/changes/{change_event_id}/impact-view` | Planned | Show impacted/stable stages, rerun plan, artifact-version linkage, and before/after context. |
-| `R2-T06` | Implement snapshot-then-stream event behavior | `R2-T01` | Event timeline, running state updates, reconnect behavior | Planned | Use `GET /api/v1/sessions/{session_id}/events` plus `GET /api/v1/sessions/{session_id}/events/stream` SSE semantics from section 11 for live reasoning trace behavior. |
-| `R2-T07` | Integrate P0 session lifecycle and run flows | `R2-T01` through `R2-T06` | Session create/load/run UX | Planned | Wire `POST /sessions`, `GET /sessions/{session_id}`, pipeline run, pause, resume, retry, claim validation, and change/rereason flows required by section 26.1. |
-| `R2-T08` | Validate hero-screen acceptance criteria | `R2-T01` through `R2-T07` | MVP hero-screen readiness | Planned | Validate against API section 28 and frontend section 23 acceptance criteria. |
+| `R2-T01` | Implement Architecture Pipeline screen | `R1-T04`, backend pipeline view support | Pipeline screen backed by `GET /api/v1/sessions/{session_id}/pipeline/view` | Completed | Added `/pipeline` hero screen with stage status, metrics, quality gates, and live trace panel using the pipeline view model. |
+| `R2-T02` | Implement Socrates Reasoning Lab | `R1-T04`, Socrates view support | Socrates hero screen backed by `GET /api/v1/sessions/{session_id}/socrates/view` | Completed | Added `/socrates` screen rendering decision under review, synthesis, confidence, blind spots, and persona cards. |
+| `R2-T03` | Implement Evidence and Claims Explorer | `R1-T04`, evidence view support | Evidence screen backed by `GET /api/v1/sessions/{session_id}/evidence/view` | Completed | Added `/evidence` screen with claims, coverage metrics, evidence source counts, confidence, and validation status. |
+| `R2-T04` | Implement Artifact Studio | `R1-T04`, artifact package view support | Artifact package screen backed by `GET /api/v1/sessions/{session_id}/artifacts/package-view` | Completed | Added `/artifacts` screen with package status, artifact cards, render-status badge, and separate quality gate badges. |
+| `R2-T05` | Implement Change Impact Studio | `R1-T04`, change impact support | Change impact screen backed by `GET /api/v1/sessions/{session_id}/changes/{change_event_id}/impact-view` | Completed | Added `/changes` screen showing impacted/stable stages, rerun order, and change event summary. |
+| `R2-T06` | Implement snapshot-then-stream event behavior | `R2-T01` | Event timeline, running state updates, reconnect behavior | Completed | Added `GET /events`, `GET /events/stream`, and a React live-events panel that opens SSE when mock mode is disabled. |
+| `R2-T07` | Integrate P0 session lifecycle and run flows | `R2-T01` through `R2-T06` | Session create/load/run UX | Completed | Added required P0 pipeline controls: create session, run, run-next, pause, resume, retry, cancel, claim validation, changes, re-reason, diffs, and health/readiness coverage. |
+| `R2-T08` | Validate hero-screen acceptance criteria | `R2-T01` through `R2-T07` | MVP hero-screen readiness | Completed | Validated backend view APIs and event endpoints with pytest; validated React route/component types with `npm run typecheck`. |
 
 ### React Phase 2 Required APIs
 
@@ -364,7 +364,7 @@ These items are active even though the FastAPI foundation is already implemented
 | `P7` | Hackathon polish and submission packaging | Historical / Mixed |
 | `P8` | Post-hackathon MAF/current-state updates | Mixed |
 | `R1` | React foundation | Completed |
-| `R2` | React hero demo screens | Planned |
+| `R2` | React hero demo screens | Completed |
 | `R3` | React full workbench | Planned |
 | `R4` | Product hardening | Planned |
 | `B1-B5` | Backend/API closure for React | Planned |

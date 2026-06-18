@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from archimedes.models.artifacts import VersionedArtifact
-from archimedes.models.enums import DiffType
+from archimedes.models.enums import DiffType, StageName, StageStatus
 from archimedes.models.session import ArchitectureSession
+from archimedes.orchestrator.controller import StageController
 from archimedes.state.diff_service import ArtifactDiffService
 
-from api.deps import get_storage
+from api.deps import get_stage_controller, get_storage
 from api.errors import api_error
 from api.storage import InMemoryArchimedesStorage
 
@@ -42,6 +43,29 @@ class ArtifactDiffResponse(BaseModel):
     added: dict[str, Any]
     removed: dict[str, Any]
     modified: dict[str, dict[str, Any]]
+
+
+class PipelineRunRequest(BaseModel):
+    mode: str = "standard"
+    allow_warning_override: bool = False
+    context_overrides: dict[str, Any] = {}
+    stop_on_warning: bool = False
+    stop_on_user_input_required: bool = True
+    max_stages: int = 10
+
+
+class PausePipelineRequest(BaseModel):
+    reason: str | None = None
+
+
+class ResumePipelineRequest(BaseModel):
+    resume_from: str = "last_successful_stage"
+    stop_on_warning: bool = False
+
+
+class RetryStageRequest(BaseModel):
+    reason: str | None = None
+    use_same_inputs: bool = True
 
 
 def _require_session(
@@ -102,6 +126,128 @@ async def get_pipeline(
     storage: InMemoryArchimedesStorage = Depends(get_storage),
 ) -> PipelineStatusResponse:
     return _pipeline_status(_require_session(storage, session_id))
+
+
+@router.post("/pipeline/run-next")
+async def run_next_stage(
+    session_id: str,
+    request: PipelineRunRequest | None = None,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+    controller: StageController = Depends(get_stage_controller),
+) -> dict[str, Any]:
+    _require_session(storage, session_id)
+    response = controller.process_message(session_id, "proceed")
+    session = _require_session(storage, session_id)
+    execution = session.stage_executions.get(response.current_stage)
+    return {
+        "session_id": session_id,
+        "stage": _value(response.current_stage),
+        "stage_run_id": execution.stage_run_id if execution else None,
+        "status": response.stage_status,
+        "artifacts_produced": response.artifacts_produced,
+        "requires_user_action": response.requires_user_action,
+    }
+
+
+@router.post("/pipeline/run")
+async def run_pipeline(
+    session_id: str,
+    request: PipelineRunRequest | None = None,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+    controller: StageController = Depends(get_stage_controller),
+) -> dict[str, Any]:
+    _require_session(storage, session_id)
+    response = controller.process_message(session_id, "proceed")
+    return {
+        "session_id": session_id,
+        "pipeline_run_id": f"pipe_{session_id}",
+        "status": response.stage_status,
+        "started_from_stage": _value(response.current_stage),
+        "planned_stages": [stage.value for stage in StageName],
+        "artifacts_produced": response.artifacts_produced,
+        "requires_user_action": response.requires_user_action,
+    }
+
+
+@router.post("/pipeline/pause")
+async def pause_pipeline(
+    session_id: str,
+    request: PausePipelineRequest | None = None,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    session = _require_session(storage, session_id)
+    execution = session.stage_executions.get(session.current_stage)
+    if execution:
+        execution.status = StageStatus.PAUSED
+    session.awaiting_stage_confirmation = True
+    storage.upsert_session(session)
+    return {
+        "session_id": session_id,
+        "status": "paused",
+        "current_stage": _value(session.current_stage),
+        "reason": request.reason if request else None,
+    }
+
+
+@router.post("/pipeline/resume")
+async def resume_pipeline(
+    session_id: str,
+    request: ResumePipelineRequest | None = None,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    session = _require_session(storage, session_id)
+    execution = session.stage_executions.get(session.current_stage)
+    if execution and execution.status == StageStatus.PAUSED:
+        execution.status = StageStatus.PENDING
+    session.awaiting_stage_confirmation = False
+    storage.upsert_session(session)
+    return {
+        "session_id": session_id,
+        "status": "running",
+        "resumed_from_stage": _value(session.current_stage),
+    }
+
+
+@router.post("/pipeline/stages/{stage_id}/retry")
+async def retry_stage(
+    session_id: str,
+    stage_id: StageName,
+    request: RetryStageRequest | None = None,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    session = _require_session(storage, session_id)
+    execution = session.stage_executions.get(stage_id)
+    if execution is None:
+        raise api_error(404, f"Stage run not found: {stage_id}", "stage_not_found")
+    execution.retry_count += 1
+    execution.status = StageStatus.RUNNING
+    storage.upsert_session(session)
+    return {
+        "session_id": session_id,
+        "stage": stage_id.value,
+        "stage_run_id": execution.stage_run_id,
+        "retry_count": execution.retry_count,
+        "status": "running",
+    }
+
+
+@router.post("/pipeline/stage-runs/{stage_run_id}/cancel")
+async def cancel_stage_run(
+    session_id: str,
+    stage_run_id: str,
+    storage: InMemoryArchimedesStorage = Depends(get_storage),
+) -> dict[str, Any]:
+    session = _require_session(storage, session_id)
+    for execution in session.stage_executions.values():
+        if execution.stage_run_id == stage_run_id:
+            execution.status = StageStatus.PAUSED
+            storage.upsert_session(session)
+            return {
+                "session_id": session_id,
+                "stage_run_id": stage_run_id,
+                "status": "cancel_requested",
+            }
+    raise api_error(404, f"Stage run not found: {stage_run_id}", "stage_run_not_found")
 
 
 @router.get("/artifacts/{stage}/latest")

@@ -2,13 +2,14 @@ import { Activity, Boxes, FileText, GitCompareArrows, Home, Landmark, Search, Sh
 import { cn } from "@/lib/cn";
 
 const navItems = [
-  { label: "Home", icon: Home, active: true },
-  { label: "Pipeline", icon: Activity, active: false },
-  { label: "Requirements", icon: FileText, active: false },
-  { label: "Options", icon: Boxes, active: false },
-  { label: "Socrates", icon: Landmark, active: false },
-  { label: "Evidence", icon: ShieldCheck, active: false },
-  { label: "Change Impact", icon: GitCompareArrows, active: false },
+  { label: "Home", href: "/", icon: Home, active: true },
+  { label: "Pipeline", href: "/pipeline", icon: Activity, active: false },
+  { label: "Requirements", href: "/pipeline", icon: FileText, active: false },
+  { label: "Options", href: "/pipeline", icon: Boxes, active: false },
+  { label: "Socrates", href: "/socrates", icon: Landmark, active: false },
+  { label: "Evidence", href: "/evidence", icon: ShieldCheck, active: false },
+  { label: "Artifacts", href: "/artifacts", icon: FileText, active: false },
+  { label: "Change Impact", href: "/changes", icon: GitCompareArrows, active: false },
 ];
 
 export function LeftNav() {
@@ -31,7 +32,7 @@ export function LeftNav() {
         {navItems.map((item) => (
           <a
             key={item.label}
-            href="#"
+            href={item.href}
             className={cn(
               "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition",
               item.active ? "bg-accent text-white" : "text-ink-muted hover:bg-surface hover:text-ink",
