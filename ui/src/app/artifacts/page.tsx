@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/shared/page-header";
 import { QualityGateBadge } from "@/components/shared/quality-gate-badge";
+import { SessionContextBanner } from "@/components/shared/session-context-banner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { getArtifactPackageView } from "@/lib/api";
 
@@ -16,6 +17,15 @@ export default async function ArtifactsPage() {
           description="Architecture package status with render status separated from quality gates."
           badges={[{ label: view.package_status, variant: "info" }]}
         />
+        <SessionContextBanner stage="Artifact Studio" />
+        <section className="rounded-lg border border-border bg-panel p-5 shadow-panel">
+          <h2 className="text-base font-semibold text-ink">Studio mode</h2>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {["Package overview", "Document viewer", "Requirements", "Options", "Socrates Brief", "ADR", "HLD", "WAF Review", "Evidence Report", "Export"].map((tab, index) => (
+              <StatusBadge key={tab} variant={index === 0 ? "info" : "neutral"}>{tab}</StatusBadge>
+            ))}
+          </div>
+        </section>
         <section className="rounded-lg border border-border bg-panel p-5 shadow-panel">
           <div className="flex flex-wrap items-center gap-3">
             <StatusBadge variant={view.render_status.status === "passed" ? "success" : "warning"}>Render {view.render_status.status}</StatusBadge>

@@ -334,6 +334,8 @@ Backlog goal: productize the new frontend and align backend/frontend operational
 | `R4-T05` | Operational hardening for live events | `R2-T06` | Stable event and reconnect behavior | Planned | Validate SSE retry, replay, partial success, and error-state handling under realistic backend conditions. |
 | `R4-T06` | Session-scoped routing model | `R3`, `R4-T01` | `/sessions/[sessionId]/...` workspace routes | Planned | Move flat workbench routes behind explicit session context so Pipeline is the default session landing page and stage pages are deep-dive workspaces. |
 | `R4-T07` | Stage availability and attention states | `R4-T06` | Disabled/ready/running/needs-action navigation states | Planned | Mark unavailable pages until their stage exists and surface waiting-for-user banners for assumptions, evidence gaps, and rerun decisions. |
+| `R4-T08` | Knowledge Library / Architecture Catalog domain | `R3` | Cross-session reusable grounding model | Planned | Add versioned organization library concepts for approved services, patterns, standards, templates, review checklists, constraints, and evidence-backed catalog items. |
+| `R4-T09` | User/session ownership data model | `R4-T01`, `R4-T06` | Owner-aware sessions and access boundaries | Planned | Add user, owner, shared-with, organization, and tenant context to session APIs and UI so multi-session usage remains unambiguous. |
 
 ---
 
@@ -483,3 +485,10 @@ Proceed with the React MVP as the primary frontend path only when all of the fol
 - Added Pipeline stage action links, stage last-updated metadata, session-context header copy, and session-workspace navigation grouping in the React UI.
 - Added `R4-T06` for session-scoped `/sessions/[sessionId]/...` routing and `R4-T07` for stage availability / attention states.
 - Added risk `R9` to track session-context loss between Pipeline and stage pages.
+
+### Screen UX Pass - 2026-06-18 11:37 +05:30
+
+- Reviewed screen-by-screen feedback and skipped items already covered by the Pipeline/session-hub pass.
+- Added visible session context to session-scoped pages and improved Command Center, Intake, Options, Evidence, Artifacts, Diagrams, History, Socrates, Patterns, Requirements, and Change Impact surfaces.
+- Replaced Options raw JSON score display with score bars and selection/assumption context.
+- Added planned `R4-T08` Knowledge Library / Architecture Catalog and `R4-T09` user/session ownership model work.

@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/shared/page-header";
 import { QualityGateBadge } from "@/components/shared/quality-gate-badge";
+import { SessionContextBanner } from "@/components/shared/session-context-banner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { getRequirementsView } from "@/lib/api";
 
@@ -16,6 +17,7 @@ export default async function RequirementsPage() {
           description={view.summary}
           badges={[{ label: "Review ready", variant: "teal" }]}
         />
+        <SessionContextBanner stage="Requirements Review" />
         {view.quality_gate ? <QualityGateBadge status={view.quality_gate.status} /> : null}
         <section className="grid gap-5 lg:grid-cols-2">
           <RequirementPanel title="Functional requirements" items={view.functional_requirements} />
@@ -46,7 +48,13 @@ function RequirementPanel({ title, items }: { title: string; items: Array<Record
       <div className="mt-4 space-y-3">
         {items.map((item, index) => (
           <div key={String(item.id ?? index)} className="rounded-md border border-border bg-surface p-3 text-sm text-ink-muted">
-            {String(item.description ?? item.metric ?? item.target ?? JSON.stringify(item))}
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge variant="neutral">{String(item.id ?? `${title.slice(0, 3).toUpperCase()}-${index + 1}`)}</StatusBadge>
+              <StatusBadge variant="info">{String(item.category ?? item.type ?? "Requirement")}</StatusBadge>
+              <StatusBadge variant={String(item.priority ?? "must").toLowerCase() === "must" ? "warning" : "neutral"}>{String(item.priority ?? "Must")}</StatusBadge>
+            </div>
+            <p className="mt-3">{String(item.description ?? item.metric ?? item.target ?? JSON.stringify(item))}</p>
+            <p className="mt-2 text-xs text-ink-subtle">Source: {String(item.source ?? "User provided")} | Confidence: {String(item.confidence ?? "0.82")}</p>
           </div>
         ))}
       </div>

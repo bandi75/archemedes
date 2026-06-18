@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/shared/page-header";
 import { MetricCard } from "@/components/shared/metric-card";
+import { SessionContextBanner } from "@/components/shared/session-context-banner";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { getSocratesView } from "@/lib/api";
 import { Landmark, Sparkles, Target } from "lucide-react";
@@ -18,6 +19,7 @@ export default async function SocratesPage() {
           description={view.decision_under_review.summary}
           badges={[{ label: "Standard mode", variant: "purple" }]}
         />
+        <SessionContextBanner stage="Socrates Review" />
         <section className="grid gap-4 md:grid-cols-3">
           <MetricCard label="Personas" value={String(view.personas.length)} trend="Concurrent review" icon={Landmark} tone="teal" />
           <MetricCard label="Confidence" value={`${confidence}%`} trend="Synthesizer decision" icon={Target} tone="success" />
@@ -31,6 +33,15 @@ export default async function SocratesPage() {
               <p key={item} className="rounded-md border border-border bg-surface p-3 text-sm text-ink-muted">{item}</p>
             ))}
           </div>
+        </section>
+        <section className="rounded-lg border border-border bg-panel p-5 shadow-panel">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge variant="purple">Synthesizer</StatusBadge>
+            <StatusBadge variant="success">Completed</StatusBadge>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-ink-muted">
+            Aggregates persona findings, confidence, blind spots, and assumptions into the recommended decision while preserving the individual reviewer trail.
+          </p>
         </section>
         <section className="grid gap-4 lg:grid-cols-2">
           {view.personas.map((persona, index) => (
