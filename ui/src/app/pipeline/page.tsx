@@ -10,15 +10,19 @@ import { Activity, CheckCircle2, Clock3 } from "lucide-react";
 export default async function PipelinePage() {
   const view = await getPipelineView();
   const completed = view.stages.filter((stage) => stage.status === "completed").length;
+  const sessionTitle = view.session?.title ?? "Active architecture session";
 
   return (
     <AppShell>
       <div className="space-y-6">
         <PageHeader
-          breadcrumb={["Workbench", "Pipeline"]}
-          title="Architecture Pipeline"
-          description="Stage progress, quality gates, and live orchestration events from the React view-model contract."
-          badges={[{ label: view.current_stage, variant: "info" }]}
+          breadcrumb={["Session Workspace", "Pipeline"]}
+          title={sessionTitle}
+          description={view.session?.business_need ?? "Pipeline controls the architecture journey; stage pages explain the details."}
+          badges={[
+            { label: `Current: ${view.selected_stage.label}`, variant: "info" },
+            { label: `Mode: ${view.session?.mode ?? "live"}`, variant: "neutral" },
+          ]}
         />
         <SessionActions />
         <section className="grid gap-4 md:grid-cols-3">

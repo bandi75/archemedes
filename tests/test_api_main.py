@@ -423,7 +423,9 @@ async def test_react_view_model_and_event_endpoints():
     assert overview.status_code == 200
     assert overview.json()["session"]["session_id"] == session_id
     assert pipeline.status_code == 200
+    assert pipeline.json()["session"]["session_id"] == session_id
     assert pipeline.json()["stages"]
+    assert all("last_updated_at" in stage for stage in pipeline.json()["stages"])
     assert "recent_events" in pipeline.json()
     assert socrates.status_code == 200
     assert "synthesis" in socrates.json()

@@ -82,6 +82,12 @@ def _stage_rows(storage: InMemoryArchimedesStorage, session: Any) -> list[dict[s
         execution = session.stage_executions.get(stage)
         artifact = storage.read_latest_artifact(session.session_id, stage.value)
         gate = session.quality_gates.get(stage)
+        if artifact:
+            last_updated = artifact.created_at
+        elif execution:
+            last_updated = execution.completed_at or execution.started_at or session.updated_at
+        else:
+            last_updated = session.updated_at
         rows.append(
             {
                 "stage": stage.value,
@@ -90,6 +96,7 @@ def _stage_rows(storage: InMemoryArchimedesStorage, session: Any) -> list[dict[s
                 "stage_run_id": execution.stage_run_id if execution else None,
                 "quality_gate": gate.model_dump(mode="json") if gate else None,
                 "artifact_version": artifact.version if artifact else None,
+                "last_updated_at": _iso(last_updated),
                 "summary": _artifact_summary(artifact)["summary"] if artifact else "Awaiting stage output.",
             }
         )
@@ -143,6 +150,12 @@ async def get_pipeline_view(
     current_stage = _value(session.current_stage)
     return {
         "session_id": session_id,
+        "session": {
+            "session_id": session.session_id,
+            "title": session.title or "Untitled architecture session",
+            "business_need": session.business_need,
+            "mode": "live",
+        },
         "current_stage": current_stage,
         "stages": stages,
         "selected_stage": next((stage for stage in stages if stage["stage"] == current_stage), stages[0]),

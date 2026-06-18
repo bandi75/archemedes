@@ -80,15 +80,21 @@ export const mockPipelineStages: Array<{
 
 export const mockPipelineView: PipelineView = {
   session_id: "session-demo",
+  session: {
+    session_id: "session-demo",
+    title: "Fintech fraud platform",
+    business_need: "Modernize real-time fraud detection for card transactions at 100K TPS.",
+    mode: "mock",
+  },
   current_stage: "socratic_review",
   stages: [
-    { stage: "requirements_extraction", label: "Requirements", status: "completed", summary: "NFRs, PCI-DSS constraints, and throughput assumptions captured.", artifact_version: 1, quality_gate: { status: "passed" } },
-    { stage: "pattern_detection", label: "Pattern Detection", status: "completed", summary: "Real-time streaming and event-driven architecture detected.", artifact_version: 1, quality_gate: { status: "passed" } },
-    { stage: "options_generation", label: "Options", status: "completed", summary: "Three Azure architecture options generated and scored.", artifact_version: 1, quality_gate: { status: "passed_with_warnings" } },
-    { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing operability, cost, security, delivery, and failure modes.", artifact_version: 1, quality_gate: { status: "passed_with_warnings" } },
-    { stage: "evidence_audit_checkpoint", label: "Evidence Checkpoint", status: "pending", summary: "Evidence coverage will be audited after Socrates synthesis.", artifact_version: null, quality_gate: null },
+    { stage: "requirements_extraction", label: "Requirements", status: "completed", summary: "NFRs, PCI-DSS constraints, and throughput assumptions captured.", artifact_version: 1, last_updated_at: "2026-06-18T08:58:00Z", quality_gate: { status: "passed" } },
+    { stage: "pattern_detection", label: "Pattern Detection", status: "completed", summary: "Real-time streaming and event-driven architecture detected.", artifact_version: 1, last_updated_at: "2026-06-18T09:00:00Z", quality_gate: { status: "passed" } },
+    { stage: "options_generation", label: "Options", status: "completed", summary: "Three Azure architecture options generated and scored.", artifact_version: 1, last_updated_at: "2026-06-18T09:01:00Z", quality_gate: { status: "passed_with_warnings" } },
+    { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing operability, cost, security, delivery, and failure modes.", artifact_version: 1, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: { status: "passed_with_warnings" } },
+    { stage: "evidence_audit_checkpoint", label: "Evidence Checkpoint", status: "pending", summary: "Evidence coverage will be audited after Socrates synthesis.", artifact_version: null, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: null },
   ],
-  selected_stage: { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing the architecture options.", artifact_version: 1, quality_gate: { status: "passed_with_warnings" } },
+  selected_stage: { stage: "socratic_review", label: "Socratic Review", status: "running", summary: "Five personas are reviewing the architecture options.", artifact_version: 1, last_updated_at: "2026-06-18T09:03:00Z", quality_gate: { status: "passed_with_warnings" } },
   recent_events: [
     { event_id: "evt-1", event_type: "stage_completed", stage: "options_generation", message: "Options generated with 3 candidates.", timestamp: "2026-06-18T09:00:00Z", percent: 50 },
     { event_id: "evt-2", event_type: "socrates_persona_completed", stage: "socratic_review", message: "Security Architect completed PCI-DSS scope review.", timestamp: "2026-06-18T09:02:00Z", percent: 70 },

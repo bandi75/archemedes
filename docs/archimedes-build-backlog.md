@@ -332,6 +332,8 @@ Backlog goal: productize the new frontend and align backend/frontend operational
 | `R4-T03` | Responsive and accessibility pass | `R2`, `R3` | Improved usability and a11y | Planned | Complete responsive behavior, keyboard access, contrast rules, and accessibility checks. |
 | `R4-T04` | Automated frontend test coverage | `R2`, `R3` | UI regression protection | Planned | Add component, integration, and end-to-end test coverage for core workbench flows. |
 | `R4-T05` | Operational hardening for live events | `R2-T06` | Stable event and reconnect behavior | Planned | Validate SSE retry, replay, partial success, and error-state handling under realistic backend conditions. |
+| `R4-T06` | Session-scoped routing model | `R3`, `R4-T01` | `/sessions/[sessionId]/...` workspace routes | Planned | Move flat workbench routes behind explicit session context so Pipeline is the default session landing page and stage pages are deep-dive workspaces. |
+| `R4-T07` | Stage availability and attention states | `R4-T06` | Disabled/ready/running/needs-action navigation states | Planned | Mark unavailable pages until their stage exists and surface waiting-for-user banners for assumptions, evidence gaps, and rerun decisions. |
 
 ---
 
@@ -367,7 +369,7 @@ These items track the backend/API closure needed for the React MVP. R4 still own
 | `R2` | React hero demo screens | Completed |
 | `R3` | React full workbench | Completed |
 | `R4` | Product hardening | Planned |
-| `B1-B5` | Backend/API closure for React | Planned |
+| `B1-B5` | Backend/API closure for React | Completed |
 
 ### Summary Notes
 
@@ -419,7 +421,7 @@ B1  Complete P0 React view-model APIs
    - Integrate section 26.2 P1 APIs.
 
 5. React Phase 4 product hardening
-   - Add auth, export flows, accessibility, responsive polish, event hardening, and automated tests.
+   - Add auth, export flows, accessibility, responsive polish, event hardening, automated tests, session-scoped routing, and stage attention states.
 ```
 
 ### Sequencing Principle
@@ -440,6 +442,7 @@ Use the legacy Streamlit app only as a historical reference or fallback demo pat
 | `R6` | View-model responses become thin wrappers over raw artifacts, pushing parsing into the frontend | Medium | High | Enforce section 18 design rule: React screens consume screen-ready views, not raw `VersionedArtifact.content`. |
 | `R7` | MAF/Socrates outputs become inconsistent across views | Medium | Medium | Use shared backend view-model shaping and acceptance checks for Pipeline, Socrates, and Evidence screens. |
 | `R8` | Change Impact Studio lacks stable linkage between change events, reruns, and artifact versions | Medium | High | Ensure `change_event_id`, artifact versions, and diff retrieval are consistently exposed in change flows and views. |
+| `R9` | Users lose session context when moving between Pipeline and stage workspaces | Medium | Medium | Move to session-scoped routes, keep Pipeline as the session landing page, and show active session/stage/version context on every workspace page. |
 
 ---
 
@@ -469,3 +472,14 @@ Proceed with the React MVP as the primary frontend path only when all of the fol
 - Active frontend phases are now the React/Next.js phases from `14-frontend-specification.md`.
 - The backlog references the React-facing APIs, endpoint priorities, SSE expectations, and acceptance criteria from `05-api-contracts-updated.md`.
 - This file is the canonical implementation-planning and tracking document.
+
+---
+
+## Changelog
+
+### UX Hub Review - 2026-06-18 11:15 +05:30
+
+- Reviewed user/session/pipeline/stage UX feedback and confirmed the intended model: Pipeline is the session orchestration hub, while individual pages are stage detail workspaces.
+- Added Pipeline stage action links, stage last-updated metadata, session-context header copy, and session-workspace navigation grouping in the React UI.
+- Added `R4-T06` for session-scoped `/sessions/[sessionId]/...` routing and `R4-T07` for stage availability / attention states.
+- Added risk `R9` to track session-context loss between Pipeline and stage pages.

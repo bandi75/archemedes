@@ -7,6 +7,7 @@ export type StageRow = {
   status: string;
   summary: string;
   artifact_version?: number | null;
+  last_updated_at?: string | null;
   quality_gate?: { status: QualityGateStatus } | null;
 };
 
@@ -21,6 +22,12 @@ export type SessionEvent = {
 
 export type PipelineView = {
   session_id: string;
+  session?: {
+    session_id: string;
+    title: string;
+    business_need: string;
+    mode: string;
+  };
   current_stage: string;
   stages: StageRow[];
   selected_stage: StageRow;

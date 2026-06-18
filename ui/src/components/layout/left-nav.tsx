@@ -1,22 +1,36 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Activity, Boxes, FileText, GitCompareArrows, Home, Landmark, Search, ShieldCheck } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
-const navItems = [
-  { label: "Home", href: "/", icon: Home, active: true },
-  { label: "Intake", href: "/intake", icon: FileText, active: false },
-  { label: "Pipeline", href: "/pipeline", icon: Activity, active: false },
-  { label: "Requirements", href: "/requirements", icon: FileText, active: false },
-  { label: "Patterns", href: "/patterns", icon: Boxes, active: false },
-  { label: "Options", href: "/options", icon: Boxes, active: false },
-  { label: "Socrates", href: "/socrates", icon: Landmark, active: false },
-  { label: "Evidence", href: "/evidence", icon: ShieldCheck, active: false },
-  { label: "Artifacts", href: "/artifacts", icon: FileText, active: false },
-  { label: "Diagrams", href: "/diagrams", icon: Boxes, active: false },
-  { label: "History", href: "/history", icon: Activity, active: false },
-  { label: "Change Impact", href: "/changes", icon: GitCompareArrows, active: false },
+const commandItems = [
+  { label: "Command Center", href: "/", icon: Home },
 ];
 
+const sessionItems = [
+  { label: "Pipeline", href: "/pipeline", icon: Activity },
+  { label: "Intake", href: "/intake", icon: FileText },
+  { label: "Requirements", href: "/requirements", icon: FileText },
+  { label: "Patterns", href: "/patterns", icon: Boxes },
+  { label: "Options", href: "/options", icon: Boxes },
+  { label: "Socrates", href: "/socrates", icon: Landmark },
+  { label: "Evidence", href: "/evidence", icon: ShieldCheck },
+  { label: "Artifacts", href: "/artifacts", icon: FileText },
+  { label: "Diagrams", href: "/diagrams", icon: Boxes },
+  { label: "History", href: "/history", icon: Activity },
+  { label: "Change Impact", href: "/changes", icon: GitCompareArrows },
+];
+
+function isActive(pathname: string, href: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
 export function LeftNav() {
+  const pathname = usePathname();
+
   return (
     <aside className="hidden border-r border-border bg-panel/95 px-4 py-5 lg:block">
       <div className="flex items-center gap-3 px-2">
@@ -32,21 +46,43 @@ export function LeftNav() {
         <span>Search sessions</span>
       </div>
 
-      <nav className="mt-6 space-y-1">
-        {navItems.map((item) => (
-          <a
-            key={item.label}
-            href={item.href}
-            className={cn(
-              "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition",
-              item.active ? "bg-accent text-white" : "text-ink-muted hover:bg-surface hover:text-ink",
-            )}
-          >
-            <item.icon className="h-4 w-4" aria-hidden="true" />
-            {item.label}
-          </a>
-        ))}
+      <nav className="mt-6 space-y-6">
+        <div className="space-y-1">
+          {commandItems.map((item) => (
+            <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} />
+          ))}
+        </div>
+
+        <div>
+          <p className="px-3 text-xs font-semibold uppercase tracking-wide text-ink-subtle">Session Workspace</p>
+          <div className="mt-2 space-y-1">
+            {sessionItems.map((item) => (
+              <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} />
+            ))}
+          </div>
+        </div>
       </nav>
     </aside>
+  );
+}
+
+function NavLink({
+  item,
+  active,
+}: {
+  item: { label: string; href: string; icon: LucideIcon };
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        "flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition",
+        active ? "bg-accent text-white" : "text-ink-muted hover:bg-surface hover:text-ink",
+      )}
+    >
+      <item.icon className="h-4 w-4" aria-hidden="true" />
+      {item.label}
+    </Link>
   );
 }
