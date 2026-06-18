@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import httpx
 import pytest
 
-from frontend.api_client import ArchimedesApiClient, ArchimedesApiError
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "streamlit_ui"))
+
+from api_client import ArchimedesApiClient, ArchimedesApiError
 
 
 def _transport(handler):

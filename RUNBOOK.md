@@ -20,7 +20,7 @@ Deployment path:
 What works now:
 
 - FastAPI app entry point: `src/api/main.py`
-- Streamlit frontend entry point: `frontend/app.py`
+- Streamlit frontend entry point: `streamlit_ui/app.py`
 - Local in-memory fallback storage: `src/api/storage.py`
 - Mock knowledge base adapter: `src/archimedes/tools/mock_foundry_iq.py`
 - Foundry IQ / Azure AI Search style adapter: `src/archimedes/tools/foundry_iq.py`
@@ -60,8 +60,8 @@ Key paths:
 
 ```text
 src/api/main.py                         FastAPI app
-frontend/app.py                         Streamlit UI
-frontend/api_client.py                  Streamlit API client
+streamlit_ui/app.py                     Streamlit UI
+streamlit_ui/api_client.py              Streamlit API client
 src/api/storage.py                      local in-memory storage
 src/archimedes/storage/cosmos_client.py Cosmos storage client
 src/archimedes/tools/foundry_iq.py      KB retrieval adapter
@@ -277,7 +277,7 @@ Open terminal 2:
 ```bash
 cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 source .venv/Scripts/activate
-streamlit run frontend/app.py --server.port 8501
+streamlit run streamlit_ui/app.py --server.port 8501
 ```
 
 Streamlit reads `ARCHIMEDES_API_URL` from `.env`. The default value is `http://localhost:8000/api/v1`, which works with the FastAPI command above.
@@ -617,7 +617,7 @@ curl "https://${apiFqdn}/api/v1/health"
 ```bash
 cd /d/Work/Challenges/Microsoft-Agents-League/src/archemedes
 source .venv/Scripts/activate
-streamlit run frontend/app.py --server.port 8501
+streamlit run streamlit_ui/app.py --server.port 8501
 ```
 
 For this hosted-backend path, set `ARCHIMEDES_API_URL=https://${apiFqdn}/api/v1` in `.env` before starting Streamlit.
@@ -669,7 +669,7 @@ ARCHIMEDES_API_URL=https://<hosted-api-fqdn>/api/v1
 Then run:
 
 ```bash
-streamlit run frontend/app.py --server.port 8501
+streamlit run streamlit_ui/app.py --server.port 8501
 ```
 
 Option 2: Deploy Streamlit separately to Container Apps without local Docker:
@@ -690,7 +690,7 @@ az containerapp up \
 If Azure source build cannot infer Streamlit startup, set the startup command:
 
 ```text
-streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+streamlit run streamlit_ui/app.py --server.port 8501 --server.address 0.0.0.0
 ```
 
 Set frontend env:
@@ -884,7 +884,7 @@ Use another port:
 
 ```bash
 python -m uvicorn api.main:app --app-dir src --reload --port 8010
-streamlit run frontend/app.py --server.port 8502
+streamlit run streamlit_ui/app.py --server.port 8502
 ```
 
 When using a different FastAPI port, update `ARCHIMEDES_API_URL` in `.env` before starting Streamlit.

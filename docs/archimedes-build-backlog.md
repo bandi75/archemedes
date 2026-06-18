@@ -242,23 +242,23 @@ These are the active implementation phases for the forward UI architecture. They
 
 ## React Phase 1: Foundation
 
-_Status: Planned_
+_Status: Completed_
 
 Backlog goal: establish the React/Next.js workbench shell and common design system described in `docs/design/14-frontend-specification.md` section 22, Phase 1.
 
 | ID | Task | Depends On | Output | Status | Summary |
 |---|---|---|---|---|---|
-| `R1-T01` | Create Next.js app shell and workspace structure | Existing FastAPI backend | `frontend-next/` or canonical Next.js frontend workspace | Planned | Establish the new frontend app, routing shell, lint/test baseline, and environment config. |
-| `R1-T02` | Implement design tokens and Tailwind theme mapping | `R1-T01` | Color, spacing, typography, and semantic token layer | Planned | Map the visual tokens from `14-frontend-specification.md` section 9 into a reusable theme and token system. |
-| `R1-T03` | Build canonical navigation and top chrome | `R1-T01`, `R1-T02` | Left navigation, top bar, search affordance, CTA shell | Planned | Implement the global app shell and navigation rules from sections 6 through 8 of the frontend spec. |
-| `R1-T04` | Build shared components | `R1-T02` | Shared cards, badges, drawers, tables, status components | Planned | Implement core components such as `AppShell`, `PageHeader`, `MetricCard`, `StatusBadge`, `QualityGateBadge`, `DataTable`, and `RightDrawer`. |
-| `R1-T05` | Build zero states, sessions list, and pipeline skeleton | `R1-T03`, `R1-T04` | Home zero-state, recent sessions, pipeline skeleton states | Planned | Deliver the non-running shell flows needed before full API integration. |
-| `R1-T06` | Add mock data mode and frontend fixtures | `R1-T04`, `R1-T05` | Demo-safe mock rendering path | Planned | Support mock rendering so the UI can be iterated independently of incomplete backend view-model work. |
+| `R1-T01` | Create Next.js app shell and workspace structure | Existing FastAPI backend | `ui/` React/Next.js frontend workspace | Completed | Added Next.js App Router workspace, TypeScript config, package scripts, env example, and local dev baseline in `ui/`. |
+| `R1-T02` | Implement design tokens and Tailwind theme mapping | `R1-T01` | Color, spacing, typography, and semantic token layer | Completed | Added Tailwind config and global CSS variables mapped to the frontend spec token direction. |
+| `R1-T03` | Build canonical navigation and top chrome | `R1-T01`, `R1-T02` | Left navigation, top bar, search affordance, CTA shell | Completed | Implemented `AppShell`, `LeftNav`, and `TopBar` with first-class Pipeline navigation and global search chrome. |
+| `R1-T04` | Build shared components | `R1-T02` | Shared cards, badges, drawers, tables, status components | Completed | Implemented Phase 1 shared components: page header, metric card, status badge, quality gate badge, data table, icon button, and right drawer. |
+| `R1-T05` | Build zero states, sessions list, and pipeline skeleton | `R1-T03`, `R1-T04` | Home zero-state, recent sessions, pipeline skeleton states | Completed | Added command-center page with metrics, recent sessions table, and stable pipeline skeleton layout. |
+| `R1-T06` | Add mock data mode and frontend fixtures | `R1-T04`, `R1-T05` | Demo-safe mock rendering path | Completed | Added frontend fixture data and mock mode env defaults so Phase 2 screens can develop ahead of complete view-model APIs. |
 
 ### React Phase 1 API Alignment
 
-- The shell should anticipate `GET /api/v1/dashboard/summary` and `GET /api/v1/sessions`.
-- This phase does not depend on complete backend view-model delivery, but it must align its types and loading states to `05-api-contracts-updated.md` sections 18 and 26.
+- The shell anticipates `GET /api/v1/dashboard/summary` and `GET /api/v1/sessions`.
+- This phase does not depend on complete backend view-model delivery, but it aligns mock state and loading surfaces to `05-api-contracts-updated.md` sections 18 and 26.
 
 ---
 
@@ -363,7 +363,7 @@ These items are active even though the FastAPI foundation is already implemented
 | `P6` | Re-reasoning and demo flows | Completed |
 | `P7` | Hackathon polish and submission packaging | Historical / Mixed |
 | `P8` | Post-hackathon MAF/current-state updates | Mixed |
-| `R1` | React foundation | Planned |
+| `R1` | React foundation | Completed |
 | `R2` | React hero demo screens | Planned |
 | `R3` | React full workbench | Planned |
 | `R4` | Product hardening | Planned |

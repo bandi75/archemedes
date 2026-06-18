@@ -90,11 +90,24 @@ python -m venv .venv && .venv\Scripts\activate   # Windows; use source .venv/bin
 pip install -r requirements.txt        # includes agent-framework and agent-framework-foundry
 cp .env.example .env                   # fill in FOUNDRY_PROJECT_ENDPOINT (and optionally ARCH_SEARCH_*)
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000 &
-streamlit run frontend/app.py
+streamlit run streamlit_ui/app.py
 ```
 
 Open `http://localhost:8501`, paste the demo scenario below, then click **Proceed** after each
 stage gate to walk the full pipeline.
+
+### React workbench foundation
+
+The new React/Next.js UI lives in `ui/`. It currently contains the Phase 1 foundation shell,
+shared components, design tokens, and mock data mode.
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
 
 ### Mock-only start (no Azure required)
 
@@ -154,7 +167,8 @@ src/archimedes/     Core business logic
   storage/          Cosmos DB client
   tools/            Azure AI Search retriever + mock KB adapter
 prompts/            Agent system prompts (one per stage)
-frontend/           Streamlit UI
+streamlit_ui/       Legacy Streamlit UI
+ui/                 React/Next.js UI workspace
 tests/              pytest suite (~89 tests)
 docs/design/        15 design documents (source of truth)
 kb_sources/         Curated Azure reference documents for the KB index

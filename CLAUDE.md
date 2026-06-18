@@ -19,7 +19,7 @@ cp .env.example .env            # then fill in values (see Environment section b
 uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2 — UI
-streamlit run frontend/app.py
+streamlit run streamlit_ui/app.py
 ```
 
 API: http://localhost:8000  
