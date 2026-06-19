@@ -8,10 +8,10 @@ from fastapi import APIRouter, Depends, Query
 
 from archimedes.models.enums import StageName
 
-from api.deps import get_storage
-from api.errors import api_error
-from api.routers.events import build_session_events
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.routers.events import build_session_events
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["frontend-views"])

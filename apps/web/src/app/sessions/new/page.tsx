@@ -31,8 +31,9 @@ export default function NewSessionPage() {
         }),
       });
       const payload = await response.json();
+      window.localStorage.setItem("archimedes.activeSessionId", payload.session_id);
       setStatus(`Session created: ${payload.session_id}. Redirecting to Pipeline.`);
-      router.push("/pipeline");
+      router.push(`/pipeline?sessionId=${payload.session_id}`);
     } catch {
       setStatus("API unavailable; showing mock Pipeline next.");
       router.push("/pipeline");

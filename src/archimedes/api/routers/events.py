@@ -8,9 +8,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 
-from api.deps import get_storage
-from api.errors import api_error
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions/{session_id}/events", tags=["events"])

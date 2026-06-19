@@ -14,9 +14,9 @@ from archimedes.orchestrator.dependency_engine import (
     detect_requirement_changes,
 )
 
-from api.deps import get_stage_controller, get_storage
-from api.errors import api_error
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_stage_controller, get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions/{session_id}/changes", tags=["changes"])

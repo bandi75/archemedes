@@ -13,11 +13,12 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .routers import artifacts, changes, diffs, events, evidence, sessions
 from archimedes.orchestrator.controller import StageController
 from archimedes.storage.cosmos_client import CosmosStorageClient
 from archimedes.state.state_manager import ArchitectureStateManager
 
-from .routers import artifacts, changes, diffs, evidence, events, frontend_views, sessions
+from .routers import frontend_views
 from .storage import InMemoryArchimedesStorage
 
 load_dotenv()
@@ -37,7 +38,11 @@ class Settings(BaseSettings):
 
     service_name: str = "archimedes-api"
     api_version: str = "v1"
-    cors_origins: list[str] = ["http://localhost:8501"]
+    cors_origins: list[str] = [
+        "http://localhost:8501",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     required_env_vars: tuple[str, ...] = ("FOUNDRY_PROJECT_ENDPOINT",)
     validate_required_env: bool = True
     storage_backend: str = "memory"
@@ -59,6 +64,17 @@ def _utc_now() -> str:
 
 def _missing_required_env(required_env_vars: Sequence[str]) -> list[str]:
     return [name for name in required_env_vars if not os.getenv(name)]
+
+
+def _cors_origins_with_local_react(origins: Sequence[str]) -> list[str]:
+    normalized = list(origins)
+    has_local_dev = any(
+        origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1")
+        for origin in normalized
+    )
+    if has_local_dev:
+        normalized.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
+    return list(dict.fromkeys(normalized))
 
 
 def _error_response(status_code: int, detail: str, error_code: str) -> JSONResponse:
@@ -155,7 +171,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=_cors_origins_with_local_react(settings.cors_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 from archimedes.models.claims import ClaimRecord
 from archimedes.models.evidence import EvidenceSource
 
-from api.deps import get_storage
-from api.errors import api_error
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["evidence"])

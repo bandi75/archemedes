@@ -4,11 +4,16 @@ import { SessionActions } from "@/components/hero/session-actions";
 import { StageList } from "@/components/hero/stage-list";
 import { PageHeader } from "@/components/shared/page-header";
 import { MetricCard } from "@/components/shared/metric-card";
-import { getPipelineView } from "@/lib/api";
+import { getActivePipelineView } from "@/lib/api";
 import { Activity, AlertTriangle, CheckCircle2, Clock3 } from "lucide-react";
 
-export default async function PipelinePage() {
-  const view = await getPipelineView();
+type PipelinePageProps = {
+  searchParams?: Promise<{ sessionId?: string }>;
+};
+
+export default async function PipelinePage({ searchParams }: PipelinePageProps) {
+  const params = await searchParams;
+  const view = await getActivePipelineView(params?.sessionId);
   const completed = view.stages.filter((stage) => stage.status === "completed").length;
   const openActions = view.stages.filter((stage) => stage.status === "failed" || stage.quality_gate?.status === "passed_with_warnings").length;
   const sessionTitle = view.session?.title ?? "Active architecture session";

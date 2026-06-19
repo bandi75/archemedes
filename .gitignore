@@ -11,9 +11,9 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-ui/.next/
-ui/node_modules/
-ui/tsconfig.tsbuildinfo
+apps/web/.next/
+apps/web/node_modules/
+apps/web/tsconfig.tsbuildinfo
 downloads/
 eggs/
 .eggs/

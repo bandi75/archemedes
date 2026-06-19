@@ -513,3 +513,33 @@ Proceed with the React MVP as the primary frontend path only when all of the fol
 - Added Open actions metric for warnings and failures.
 - Improved stage row action labels and unavailable-stage prerequisite hints.
 - Enriched live reasoning trace rows with timestamp, stage, and event type.
+
+### Pipeline Live Data - 2026-06-18 13:07 +05:30
+
+- Switched Pipeline data loading to prefer real FastAPI sessions by default instead of mock data.
+- Added latest-session discovery through `GET /api/v1/sessions` and `?sessionId=` support for loading a specific session pipeline.
+- Updated new-session creation to redirect to Pipeline with the returned session ID.
+- Kept mock Pipeline fallback only for explicit mock mode or API-unavailable situations.
+
+### React CORS Fix - 2026-06-19 09:30 +05:30
+
+- Fixed browser preflight failures for React session creation by allowing local React dev origins whenever local CORS origins are configured.
+- Added regression coverage for `OPTIONS /api/v1/sessions` from `http://localhost:3000`.
+
+### Intake Detail UX - 2026-06-19 09:42 +05:30
+
+- Reworked the Intake page as an existing-session Stage 1 detail workspace rather than a creation/template surface.
+- Added pipeline readiness status, original/refined business need cards, open clarifications, answer input, intake notes, setup source labels, and actionable readiness checklist.
+- Renamed page actions to Edit business need, Submit clarification answers, Mark ready for requirements, and Back to pipeline.
+
+### Intake Submit Wired - 2026-06-19 09:48 +05:30
+
+- Wired Intake clarification answer submission to update page state and call the active session message API when available.
+- Persisted created session IDs for later session-scoped Intake interactions.
+- Unlocked Mark ready for requirements after clarification answers are submitted and reflected readiness in the session status/checklist.
+
+### Intake API Submit - 2026-06-19 09:56 +05:30
+
+- Removed the silent local-only submit path that prevented visible Network tab activity in mock/no-session cases.
+- Added active-session resolution through URL, local storage, and `GET /sessions` before posting clarification answers.
+- Added visible submitting/result status beside the Intake answer button and kept the primary/top submit action in sync.

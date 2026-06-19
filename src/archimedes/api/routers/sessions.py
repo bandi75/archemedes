@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from archimedes.models.session import ArchitectureSession
 from archimedes.orchestrator.controller import OrchestratorResponse, StageController
 
-from api.deps import get_stage_controller, get_storage
-from api.errors import api_error
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_stage_controller, get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])

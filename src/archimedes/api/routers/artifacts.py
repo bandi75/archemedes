@@ -11,9 +11,9 @@ from archimedes.models.session import ArchitectureSession
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.diff_service import ArtifactDiffService
 
-from api.deps import get_stage_controller, get_storage
-from api.errors import api_error
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.deps import get_stage_controller, get_storage
+from archimedes.api.errors import api_error
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 router = APIRouter(prefix="/sessions/{session_id}", tags=["artifacts"])

@@ -4,7 +4,7 @@ from archimedes.models.session import ArchitectureSession
 from archimedes.orchestrator.controller import StageController
 from archimedes.state.diff_service import ArtifactDiffService
 from archimedes.state.state_manager import ArchitectureStateManager
-from api.storage import InMemoryArchimedesStorage
+from archimedes.api.storage import InMemoryArchimedesStorage
 
 
 DEMO_NEED = (

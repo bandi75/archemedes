@@ -17,7 +17,7 @@ from archimedes.models.enums import StageName
 from archimedes.models.enums import ClaimType
 from archimedes.models.patches import StagePatch
 from archimedes.models.quality_gates import QualityGateResult
-from api.main import Settings, create_app
+from archimedes.api.main import Settings, create_app
 
 pytestmark = pytest.mark.anyio
 
@@ -137,6 +137,22 @@ async def test_cors_allows_streamlit_origin():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:8501"
+
+
+async def test_cors_allows_react_session_create_preflight():
+    async with _test_client() as client:
+        response = await client.options(
+            "/api/v1/sessions",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert "POST" in response.headers["access-control-allow-methods"]
 
 
 async def test_lifespan_validates_required_env_vars(monkeypatch):

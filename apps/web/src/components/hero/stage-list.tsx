@@ -39,8 +39,12 @@ export function StageList({ stages }: { stages: StageRow[] }) {
       <div className="divide-y divide-border">
         {stages.map((stage) => {
           const action = stageActions[stage.stage] ?? { href: "/artifacts", label: "Open" };
-          const actionLabel = stage.stage === "socratic_review" && stage.status === "completed" ? "Review" : action.label;
-          const isUnavailable = stage.status === "pending" && !stage.artifact_version;
+          const actionLabel = stage.stage === "intake" && stage.status === "pending"
+            ? "Start"
+            : stage.stage === "socratic_review" && stage.status === "completed"
+              ? "Review"
+              : action.label;
+          const isUnavailable = stage.stage !== "intake" && stage.status === "pending" && !stage.artifact_version;
           return (
             <article key={stage.stage} className="grid gap-3 px-5 py-4 md:grid-cols-[190px_minmax(0,1fr)_auto] md:items-center">
               <div>

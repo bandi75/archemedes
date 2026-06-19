@@ -21,9 +21,19 @@ import type {
 } from "@/lib/view-models";
 
 const API_URL = process.env.NEXT_PUBLIC_ARCHIMEDES_API_URL ?? "http://localhost:8000/api/v1";
-const MOCK_DATA = process.env.NEXT_PUBLIC_ARCHIMEDES_MOCK_DATA !== "false";
+const MOCK_DATA = process.env.NEXT_PUBLIC_ARCHIMEDES_MOCK_DATA === "true";
 export const DEFAULT_SESSION_ID = "session-demo";
 export const DEFAULT_CHANGE_EVENT_ID = "change-demo";
+
+type SessionListResponse = {
+  items: Array<{
+    session_id: string;
+    title?: string | null;
+    current_stage?: string | null;
+    created_at?: string;
+  }>;
+  total: number;
+};
 
 async function getJson<T>(path: string, fallback: T): Promise<T> {
   if (MOCK_DATA) {
@@ -42,6 +52,30 @@ async function getJson<T>(path: string, fallback: T): Promise<T> {
 
 export function getPipelineView(sessionId = DEFAULT_SESSION_ID): Promise<PipelineView> {
   return getJson(`/sessions/${sessionId}/pipeline/view`, mockPipelineView);
+}
+
+export async function getActivePipelineView(sessionId?: string): Promise<PipelineView> {
+  if (MOCK_DATA) {
+    return mockPipelineView;
+  }
+  const resolvedSessionId = sessionId ?? await getLatestSessionId();
+  if (!resolvedSessionId) {
+    return mockPipelineView;
+  }
+  return getPipelineView(resolvedSessionId);
+}
+
+async function getLatestSessionId(): Promise<string | null> {
+  try {
+    const response = await fetch(`${API_URL}/sessions`, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = (await response.json()) as SessionListResponse;
+    return payload.items[0]?.session_id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function getSocratesView(sessionId = DEFAULT_SESSION_ID): Promise<SocratesView> {
