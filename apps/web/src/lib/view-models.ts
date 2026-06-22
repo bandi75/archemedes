@@ -122,11 +122,3 @@ export type ArtifactListView = {
     created_at: string;
   }>;
 };
-
-export type PipelineStageMock = {
-  id: string;
-  name: string;
-  summary: string;
-  status: string;
-  statusVariant: StatusBadgeVariant;
-};

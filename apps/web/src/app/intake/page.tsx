@@ -282,7 +282,6 @@ function SessionContextCard({ ready }: { ready: boolean }) {
         <StatusBadge variant="info">Current stage: Intake</StatusBadge>
         <StatusBadge variant="neutral">Active version: v0</StatusBadge>
         <StatusBadge variant="neutral">Owner: current user</StatusBadge>
-        <StatusBadge variant="neutral">Mode: mock</StatusBadge>
         <StatusBadge variant={ready ? "success" : "warning"}>
           {ready ? "Pipeline status: Intake ready" : "Pipeline status: Waiting for intake readiness"}
         </StatusBadge>

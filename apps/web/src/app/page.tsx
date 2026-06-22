@@ -6,7 +6,6 @@ import { MetricCard } from "@/components/shared/metric-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { QualityGateBadge } from "@/components/shared/quality-gate-badge";
 import { DataTable } from "@/components/shared/data-table";
-import { mockPipelineStages, mockSessions } from "@/lib/mock-data";
 
 export default function Home() {
   return (
@@ -16,11 +15,8 @@ export default function Home() {
           breadcrumb={["Workbench", "Command Center"]}
           title="Architecture Command Center"
           description="My architecture sessions, work needing review, and reusable organization knowledge."
-          badges={[
-            { label: "Demo mode", variant: "info" },
-            { label: "Mock data", variant: "teal" },
-          ]}
         />
+
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Active sessions" value="3" trend="2 ready for review" icon={FileText} />
@@ -47,7 +43,6 @@ export default function Home() {
                 <h2 className="text-base font-semibold text-ink">My active sessions</h2>
                 <p className="mt-1 text-sm text-ink-muted">Recently updated sessions owned by or assigned to the current user.</p>
               </div>
-              <StatusBadge variant="neutral">Demo data</StatusBadge>
             </div>
             <DataTable
               columns={[
@@ -57,14 +52,7 @@ export default function Home() {
                 { key: "quality", label: "Gate" },
                 { key: "updated", label: "Updated" },
               ]}
-              rows={mockSessions.map((session) => ({
-                id: session.id,
-                name: <Link className="font-medium text-ink underline-offset-4 hover:underline" href="/pipeline">{session.name}</Link>,
-                stage: session.stage,
-                owner: "Me",
-                quality: <QualityGateBadge status={session.qualityGate} />,
-                updated: session.updatedAt,
-              }))}
+              rows={[]}
             />
           </div>
 
@@ -74,16 +62,6 @@ export default function Home() {
               <p className="mt-1 text-sm text-ink-muted">Core session workflow areas available for the current product path.</p>
             </div>
             <ol className="space-y-3 p-5">
-              {mockPipelineStages.map((stage) => (
-                <li key={stage.id} className="flex items-center gap-3 rounded-md border border-border bg-surface px-3 py-3">
-                  <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">{stage.name}</p>
-                    <p className="text-xs text-ink-muted">{stage.summary}</p>
-                  </div>
-                  <StatusBadge variant={stage.statusVariant}>{stage.status}</StatusBadge>
-                </li>
-              ))}
             </ol>
           </div>
         </section>

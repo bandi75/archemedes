@@ -27,7 +27,7 @@ export default async function HistoryPage() {
     version: artifact.version ?? 0,
     content: { summary: artifact.summary },
     quality_gate: artifact.quality_gate ?? { status: "passed" as const },
-    created_at: "mock",
+    created_at: new Date().toISOString(),
   }));
 
   return (
@@ -56,7 +56,7 @@ export default async function HistoryPage() {
               stage: stageNames[artifact.stage] ?? artifact.stage,
               version: `v${artifact.version}`,
               summary: String(artifact.content.summary ?? "Artifact version"),
-              created: artifact.created_at === "mock" ? "Demo seed" : new Date(artifact.created_at).toLocaleString(),
+              created: new Date(artifact.created_at).toLocaleString(),
               change: artifact.version > 1 ? "Requirement change" : "Initial run",
               diff: <StatusBadge variant={artifact.version > 1 ? "info" : "neutral"}>{artifact.version > 1 ? "View diff" : "Baseline"}</StatusBadge>,
               gate: <QualityGateBadge status={artifact.quality_gate.status} />,

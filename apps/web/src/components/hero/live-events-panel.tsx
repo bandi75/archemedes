@@ -17,9 +17,6 @@ export function LiveEventsPanel({ sessionId, initialEvents }: LiveEventsPanelPro
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_ARCHIMEDES_MOCK_DATA !== "false") {
-      return;
-    }
     const source = new EventSource(`${API_URL}/sessions/${sessionId}/events/stream`);
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);

@@ -4,16 +4,9 @@ import { SessionContextBanner } from "@/components/shared/session-context-banner
 import { StatusBadge } from "@/components/shared/status-badge";
 import { getArtifactPackageView } from "@/lib/api";
 
-const demoMermaid = `flowchart LR
-  Client[Transaction Systems] --> EventHubs[Azure Event Hubs]
-  EventHubs --> StreamAnalytics[Stream Analytics]
-  StreamAnalytics --> Functions[Azure Functions]
-  Functions --> Cosmos[Cosmos DB]
-  Cosmos --> Monitor[Azure Monitor]`;
-
 export default async function DiagramsPage() {
-  const view = await getArtifactPackageView();
-  const hld = view.artifacts.find((artifact) => artifact.stage === "hld_generation");
+  const view = await getArtifactPackageView("default");
+  const hld = view.artifacts?.find((artifact) => artifact.stage === "hld_generation");
 
   return (
     <AppShell>
@@ -32,23 +25,11 @@ export default async function DiagramsPage() {
             <StatusBadge variant="neutral">Render Diagnostics</StatusBadge>
           </div>
           <div className="mt-5 rounded-xl border border-border bg-surface p-6">
-            <div className="grid gap-4 md:grid-cols-5 md:items-center">
-              {["Transaction Systems", "Event Hubs", "Stream Analytics", "Azure Functions", "Cosmos DB"].map((node, index) => (
-                <div key={node} className="relative rounded-lg border border-accent/20 bg-panel p-4 text-center shadow-panel">
-                  <p className="text-sm font-semibold text-ink">{node}</p>
-                  {index < 4 ? <span className="absolute -right-3 top-1/2 hidden h-px w-6 bg-accent md:block" /> : null}
-                </div>
-              ))}
-            </div>
-            <div className="mx-auto mt-4 max-w-xs rounded-lg border border-evidence/20 bg-evidence/10 p-4 text-center text-sm font-semibold text-evidence">
-              Azure Monitor
-            </div>
+            <p className="text-sm font-semibold text-ink-muted">No diagram to render.</p>
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <StatusBadge variant="success">Render source available</StatusBadge>
-            <StatusBadge variant={view.render_status.status === "passed" ? "success" : "warning"}>Render {view.render_status.status}</StatusBadge>
+            <StatusBadge variant={view.render_status?.status === "passed" ? "success" : "warning"}>Render {view.render_status?.status ?? "unknown"}</StatusBadge>
           </div>
-          <pre className="mt-5 overflow-auto rounded-md border border-border bg-surface p-4 text-sm leading-6 text-ink-muted">{demoMermaid}</pre>
         </section>
       </div>
     </AppShell>

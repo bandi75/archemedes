@@ -8,12 +8,10 @@ import { StatusBadge } from "@/components/shared/status-badge";
 
 const API_URL = process.env.NEXT_PUBLIC_ARCHIMEDES_API_URL ?? "http://localhost:8000/api/v1";
 
-const demoNeed = "Design a real-time fraud detection platform on Azure for a fintech processing 10K TPS with PCI-DSS constraints and 99.95% availability.";
-
 export default function NewSessionPage() {
   const router = useRouter();
   const [title, setTitle] = useState("Fintech fraud platform");
-  const [businessNeed, setBusinessNeed] = useState(demoNeed);
+  const [businessNeed, setBusinessNeed] = useState("");
   const [status, setStatus] = useState("Ready to create draft session");
 
   async function createSession() {
@@ -35,8 +33,7 @@ export default function NewSessionPage() {
       setStatus(`Session created: ${payload.session_id}. Redirecting to Pipeline.`);
       router.push(`/pipeline?sessionId=${payload.session_id}`);
     } catch {
-      setStatus("API unavailable; showing mock Pipeline next.");
-      router.push("/pipeline");
+      setStatus("API unavailable.");
     }
   }
 
@@ -78,9 +75,6 @@ export default function NewSessionPage() {
               </button>
               <button className="inline-flex h-10 items-center rounded-md border border-border bg-surface px-4 text-sm font-semibold text-ink" onClick={() => router.push("/")} type="button">
                 Cancel
-              </button>
-              <button className="inline-flex h-10 items-center rounded-md border border-border bg-panel px-4 text-sm font-semibold text-ink-muted" onClick={() => setBusinessNeed(demoNeed)} type="button">
-                Use demo template
               </button>
             </div>
             <p className="mt-3 text-sm text-ink-muted">{status}</p>

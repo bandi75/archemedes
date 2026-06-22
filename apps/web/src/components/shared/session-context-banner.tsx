@@ -3,14 +3,12 @@ import { StatusBadge } from "@/components/shared/status-badge";
 type SessionContextBannerProps = {
   stage: string;
   version?: string;
-  mode?: string;
   owner?: string;
 };
 
 export function SessionContextBanner({
   stage,
   version = "v1",
-  mode = "Mock",
   owner = "current user",
 }: SessionContextBannerProps) {
   return (
@@ -23,7 +21,6 @@ export function SessionContextBanner({
         </div>
         <div className="flex flex-wrap gap-2">
           <StatusBadge variant="info">Stage: {stage}</StatusBadge>
-          <StatusBadge variant="neutral">Mode: {mode}</StatusBadge>
         </div>
       </div>
     </section>
